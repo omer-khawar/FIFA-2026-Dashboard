@@ -59,6 +59,33 @@ function shortenLabel(label: string): string {
   return label.slice(0, 10);
 }
 
+// ── Slot-source parsing (for connector edges) ─────────────────────────────────
+
+const ROUND_LABEL_TO_STAGE: Record<string, Stage> = {
+  'round of 32': 'r32',
+  'round of 16': 'r16',
+  quarterfinal: 'qf',
+  semifinal: 'sf',
+};
+
+/**
+ * Extract which prior-round match feeds a knockout slot, straight from the feed's
+ * "<Round> N Winner" placeholder label. Returns null for group-stage / third-place
+ * placeholders and decided teams. Connectors are derived from these — NOT from a
+ * 2k-1/2k assumption, because the real FIFA feed pairs e.g. R32 winners 1 & 3 into
+ * R16 match 1 (verified against the live ESPN payload).
+ */
+function sourceOfSlot(slot: Match['home']): { stage: Stage; ordinal: number } | null {
+  if (slot.kind !== 'placeholder') return null;
+  const m = /^(Round of 32|Round of 16|Quarterfinal|Semifinal) (\d+) Winner$/i.exec(
+    slot.label.trim(),
+  );
+  if (!m) return null;
+  const stage = ROUND_LABEL_TO_STAGE[m[1].toLowerCase()];
+  if (!stage) return null;
+  return { stage, ordinal: parseInt(m[2], 10) };
+}
+
 // ── Coordinate helpers ────────────────────────────────────────────────────────
 
 const BRACKET_STAGE_ORDER: Stage[] = ['r32', 'r16', 'qf', 'sf', 'final'];
@@ -241,32 +268,47 @@ export default function Bracket() {
   // SVG canvas size — add bottom margin for 3rd-place if it exists
   const svgH = totalH + (thirdRound ? NODE_H + THIRD_OFFSET + 28 : 16);
 
-  // Connector lines between rounds (elbow paths)
+  // Lookup: (stage, ordinal) → { center y, right-edge x } of that match's node.
+  const nodeByStageOrdinal = new Map<string, { cy: number; rightX: number; leftX: number }>();
+  for (const { stage, matches: ms, colIdx, centers } of roundLayouts) {
+    ms.forEach((m, k) => {
+      nodeByStageOrdinal.set(`${stage}#${m.ordinal}`, {
+        cy: STAGE_LABEL_H + centers[k],
+        rightX: colX(colIdx) + NODE_W,
+        leftX: colX(colIdx),
+      });
+    });
+  }
+
+  // Connector lines: for each NEXT-round node, draw an elbow from each prior-round
+  // match that feeds it, resolved from the feed's "<Round> N Winner" labels.
   const connectorLines: ReactElement[] = [];
-  for (let ri = 0; ri < roundLayouts.length - 1; ri++) {
-    const cur = roundLayouts[ri];
-    const next = roundLayouts[ri + 1];
-    const cx = colX(cur.colIdx) + NODE_W;   // right edge of current col
-    const nx = colX(next.colIdx);            // left edge of next col
-    const midX = cx + (nx - cx) / 2;
+  for (let ri = 1; ri < roundLayouts.length; ri++) {
+    const next = roundLayouts[ri];
+    const nx = colX(next.colIdx); // left edge of this (parent) column
 
-    for (let k = 0; k < cur.matches.length; k++) {
-      const cy = STAGE_LABEL_H + cur.centers[k];
-      const parentIdx = Math.floor(k / 2);
-      if (parentIdx >= next.centers.length) continue;
-      const py = STAGE_LABEL_H + next.centers[parentIdx];
-
-      connectorLines.push(
-        <path
-          key={`conn-${ri}-${k}`}
-          d={`M ${cx} ${cy} H ${midX} V ${py} H ${nx}`}
-          fill="none"
-          stroke="var(--line)"
-          strokeWidth="1"
-          strokeLinecap="round"
-        />
-      );
-    }
+    next.matches.forEach((m, k) => {
+      const py = STAGE_LABEL_H + next.centers[k];
+      for (const slot of [m.home, m.away]) {
+        const src = sourceOfSlot(slot);
+        if (!src) continue;
+        const child = nodeByStageOrdinal.get(`${src.stage}#${src.ordinal}`);
+        if (!child) continue;
+        const cx = child.rightX;
+        const cy = child.cy;
+        const midX = cx + (nx - cx) / 2;
+        connectorLines.push(
+          <path
+            key={`conn-${next.stage}-${m.ordinal}-${src.stage}-${src.ordinal}`}
+            d={`M ${cx} ${cy} H ${midX} V ${py} H ${nx}`}
+            fill="none"
+            stroke="var(--line)"
+            strokeWidth="1"
+            strokeLinecap="round"
+          />,
+        );
+      }
+    });
   }
 
   // 3rd-place position: below SF column, centered between SF and Final columns

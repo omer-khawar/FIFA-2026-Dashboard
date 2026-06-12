@@ -44,6 +44,8 @@ export function usePredictions(): void {
   // Mutable refs that don't trigger re-render.
   const runningRef = useRef(false);
   const pendingRef = useRef(false);
+  // Monotonic generation token: only the latest run's result is applied.
+  const genRef = useRef(0);
   // Latest inputs, so a queued re-run uses fresh data.
   const latestRef = useRef<{
     teams: Record<TeamId, Team>;
@@ -56,49 +58,51 @@ export function usePredictions(): void {
     if (status !== 'ready') return;
     if (matches.length === 0) return;
 
-    let cancelled = false;
+    // Each effect run bumps a generation token. The worker result is applied
+    // only if the generation that *spawned that worker* is still the latest —
+    // so a stale (superseded) run is ignored rather than overwriting fresher
+    // predictions. We do NOT abort an in-flight job on cleanup: under React
+    // StrictMode the effect is mounted → unmounted → remounted with identical
+    // inputs, and tearing the job down on the throwaway unmount would strand the
+    // pipeline (predictions would never arrive). The generation token, read
+    // freshly each time a worker is actually spawned, makes the latest run win.
+    genRef.current += 1;
 
     const runJob = async () => {
-      if (cancelled) return;
       runningRef.current = true;
 
       const eloSeed = await loadEloSeed();
-      if (cancelled) {
-        runningRef.current = false;
-        return;
-      }
 
+      // Bind this worker run to the current (latest) generation. A pending
+      // re-run started later will read a higher generation here.
+      const runGen = genRef.current;
       const { teams: t, matches: m, stadiums: st } = latestRef.current;
 
       const worker = new Worker(new URL('./worker.ts', import.meta.url), {
         type: 'module',
       });
 
-      const cleanup = () => {
+      const finish = () => {
         worker.terminate();
+        runningRef.current = false;
+        // If inputs changed while we ran, kick off exactly one more pass.
+        if (pendingRef.current) {
+          pendingRef.current = false;
+          void runJob();
+        }
       };
 
       worker.onmessage = (e: MessageEvent<SimulateResponse>) => {
         const data = e.data;
-        if (data && data.type === 'result' && !cancelled) {
+        // Apply only if this worker's generation is still the latest.
+        if (data && data.type === 'result' && genRef.current === runGen) {
           setPredictions(data.payload as Predictions);
         }
-        cleanup();
-        runningRef.current = false;
-        // If inputs changed while we ran, kick off exactly one more pass.
-        if (pendingRef.current && !cancelled) {
-          pendingRef.current = false;
-          void runJob();
-        }
+        finish();
       };
 
       worker.onerror = () => {
-        cleanup();
-        runningRef.current = false;
-        if (pendingRef.current && !cancelled) {
-          pendingRef.current = false;
-          void runJob();
-        }
+        finish();
       };
 
       const req: SimulateRequest = {
@@ -122,9 +126,7 @@ export function usePredictions(): void {
       void runJob();
     }
 
-    return () => {
-      cancelled = true;
-    };
+    // No cleanup that aborts the run: the generation token handles staleness.
     // Re-run when the matches identity changes or the store becomes ready.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, matches, setPredictions]);

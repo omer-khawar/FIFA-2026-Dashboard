@@ -411,9 +411,18 @@
 }
 
 /* ── Bracket ─────────────────────────────────────────────────────────────────── */
+/* The card is a flex column so the scroll area fills the row height; the full
+   bracket (16-match R32 column → Final + 3rd place) is taller than the card, so
+   it scrolls vertically AND horizontally rather than being clipped. */
+.area-bracket {
+  display: flex;
+  flex-direction: column;
+}
+
 .wc-bracket-wrap {
-  overflow-x: auto;
-  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding-bottom: 4px;
 }
 
