@@ -1,56 +1,89 @@
 /**
- * GroupsGrid.tsx — stub. Panels agent replaces internals.
- * Shows 12 group cards (A–L), each listing teams with basic standings.
+ * GroupsGrid.tsx — 12 group cards A–L in a 4-col grid.
+ * Each card: rank, flag, code, Pts (bold), GD (signed), ESPN noteColor stripe,
+ * advance-prob bar (pR32), live-match pulse dot.
  */
+import { useMemo } from 'react';
 import { useWorldCup } from '../data/store';
 
+function signedGD(gd: number): string {
+  if (gd > 0) return `+${gd}`;
+  return String(gd);
+}
+
 export default function GroupsGrid() {
-  const { groups, teams, predictions } = useWorldCup();
+  const { groups, teams, predictions, matches } = useWorldCup();
+  const live = useMemo(() => matches.filter(m => m.state === 'in'), [matches]);
+
+  // Set of teamIds currently in a live match
+  const liveTeamIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of live) {
+      if (m.home.kind === 'team') ids.add(m.home.teamId);
+      if (m.away.kind === 'team') ids.add(m.away.teamId);
+    }
+    return ids;
+  }, [live]);
+
+  // Max pR32 across all teams (for scaling the bar relative to 100%)
+  // pR32 is already a probability 0..1 so we use it directly.
 
   return (
     <div className="card area-groups">
       <div className="card-label">Groups</div>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: 8,
-      }}>
+      <div className="wc-groups-grid">
         {groups.map(group => (
-          <div key={group.id} style={{
-            background: 'var(--bg1)',
-            border: '1px solid var(--line)',
-            borderRadius: 8,
-            padding: '8px 10px',
-          }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', marginBottom: 6, letterSpacing: '0.05em' }}>
-              GROUP {group.id}
-            </div>
+          <div key={group.id} className="wc-group-card">
+            <div className="wc-group-card__header">GROUP {group.id}</div>
+
             {group.rows.map(row => {
               const team = teams[row.teamId];
+              const isLiveNow = liveTeamIds.has(row.teamId);
               const pR32 = predictions?.outlooks?.[row.teamId]?.pR32;
+
               return (
-                <div key={row.teamId} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 0',
-                  borderLeft: row.noteColor ? `2px solid ${row.noteColor}` : '2px solid transparent',
-                  paddingLeft: 4,
-                }}>
-                  {team?.flagUrl && (
-                    <img src={team.flagUrl} className="flag flag-sm" alt={team.code} />
+                <div key={row.teamId} className="wc-group-row">
+                  {/* Qualification stripe */}
+                  {row.noteColor && (
+                    <div
+                      className="wc-group-row__stripe"
+                      style={{ background: row.noteColor }}
+                      title={row.noteDesc ?? ''}
+                    />
                   )}
-                  <span style={{ flex: 1, fontSize: 11, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+
+                  <span className="wc-group-row__rank">{row.rank}</span>
+
+                  <div className="wc-group-row__flag-wrap">
+                    {team?.flagUrl && (
+                      <img
+                        src={team.flagUrl}
+                        className="flag flag-sm"
+                        alt={team?.code ?? row.teamId}
+                        loading="lazy"
+                      />
+                    )}
+                    {isLiveNow && <span className="wc-group-row__live-dot" aria-label="Live match" />}
+                  </div>
+
+                  <span className="wc-group-row__code">
                     {team?.code ?? row.teamId}
                   </span>
-                  <span className="tabular" style={{ fontSize: 11, color: 'var(--muted)', minWidth: 14, textAlign: 'right' }}>
-                    {row.points}
-                  </span>
-                  {pR32 !== undefined && (
-                    <div style={{ width: 24, height: 3, background: 'var(--line)', borderRadius: 1.5, overflow: 'hidden', marginLeft: 2 }}>
-                      <div style={{ height: '100%', width: `${pR32 * 100}%`, background: 'var(--accent)', borderRadius: 1.5 }} />
-                    </div>
-                  )}
+
+                  <span className="wc-group-row__pts">{row.points}</span>
+
+                  <span className="wc-group-row__gd">{signedGD(row.gd)}</span>
+
+                  {/* Advance-probability bar */}
+                  <div className="wc-group-row__pbar-wrap">
+                    {pR32 !== undefined && (
+                      <div
+                        className="wc-group-row__pbar-fill"
+                        style={{ width: `${Math.round(pR32 * 100)}%` }}
+                        title={`${Math.round(pR32 * 100)}% advance`}
+                      />
+                    )}
+                  </div>
                 </div>
               );
             })}

@@ -1,6 +1,6 @@
 /**
- * NewsRow.tsx — stub. Panels agent replaces internals.
- * Up to 8 news cards linking to ESPN articles.
+ * NewsRow.tsx — up to 8 news cards, horizontal scroll.
+ * 16/9 cover image, 2-line headline, time-ago. Full card is <a>.
  */
 import { useWorldCup } from '../data/store';
 import { timeAgo } from '../lib/format';
@@ -12,9 +12,11 @@ export default function NewsRow() {
   return (
     <div className="card area-news" style={{ padding: '12px 16px' }}>
       <div className="card-label">News</div>
-      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+      <div className="wc-news-scroll">
         {items.length === 0 && (
-          <div style={{ color: 'var(--muted)', fontSize: 12 }}>No news available</div>
+          <div style={{ color: 'var(--muted)', fontSize: 12, padding: '4px 0' }}>
+            No news available
+          </div>
         )}
         {items.map(item => (
           <a
@@ -22,42 +24,30 @@ export default function NewsRow() {
             href={item.link}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              flexShrink: 0,
-              width: 200,
-              display: 'flex',
-              flexDirection: 'column',
-              background: 'var(--bg1)',
-              border: '1px solid var(--line)',
-              borderRadius: 10,
-              overflow: 'hidden',
-              textDecoration: 'none',
-              color: 'inherit',
-              transition: 'border-color 0.2s',
-            }}
+            className="wc-news-card"
+            aria-label={item.headline}
           >
-            {item.imageUrl && (
-              <img
-                src={item.imageUrl}
-                alt=""
-                style={{ width: '100%', height: 80, objectFit: 'cover' }}
-              />
-            )}
-            <div style={{ padding: '8px 10px', flex: 1 }}>
-              <div style={{
-                fontSize: 11,
-                fontWeight: 500,
-                lineHeight: 1.4,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}>
-                {item.headline}
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-                {timeAgo(item.published)}
-              </div>
+            {/* Cover image — always renders the box; shows ⚽ fallback */}
+            <div className="wc-news-card__img-wrap">
+              {item.imageUrl ? (
+                <img
+                  className="wc-news-card__img"
+                  src={item.imageUrl}
+                  alt=""
+                  loading="lazy"
+                  onError={e => {
+                    // Hide broken image; parent div shows fallback bg
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <span className="wc-news-card__no-img" aria-hidden="true">⚽</span>
+              )}
+            </div>
+
+            <div className="wc-news-card__body">
+              <div className="wc-news-card__headline">{item.headline}</div>
+              <div className="wc-news-card__time">{timeAgo(item.published)}</div>
             </div>
           </a>
         ))}
