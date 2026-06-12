@@ -1,0 +1,12 @@
+HTTP/1.1 200 OK
+Content-Type: application/json;charset=UTF-8
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET,PUT,POST,DELETE,OPTIONS,HEAD
+Access-Control-Expose-Headers: content-length,location
+Link: <standings.json#>; rel="describedby"
+Cache-Control: max-age=3
+Date: Fri, 12 Jun 2026 15:11:05 GMT
+Transfer-Encoding:  chunked
+Connection: keep-alive
+Connection: Transfer-Encoding
+
