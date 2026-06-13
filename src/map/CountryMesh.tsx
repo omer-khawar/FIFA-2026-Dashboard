@@ -117,7 +117,11 @@ export default function CountryMesh({
       bevelEnabled: false,
       steps: 1,
     });
-    geo.rotateX(-Math.PI / 2);
+    // +π/2 (NOT −π/2) so the shape's Y (= scene z) maps to world +z, identical to
+    // the beacon transform `[x, baseY, z]`. The old −π/2 negated z, so beacons and
+    // countries lived in opposite N–S worlds (beacons rendered flipped). A rotation
+    // (not a shape-Y negation) preserves winding, so normals stay correct.
+    geo.rotateX(Math.PI / 2);
     geo.translate(0, SLAB_DEPTH, 0);
     geo.computeVertexNormals();
 
@@ -130,7 +134,12 @@ export default function CountryMesh({
       emissiveIntensity: 0.25,
       roughness: 0.95,
       metalness: 0,
-      transparent: true,
+      // OPAQUE on purpose: a transparent slab + depthWrite is an anti-pattern
+      // (re-sorted every frame, unreliable self-occlusion). NOTE: the black
+      // *flashing* was the EffectComposer on a transparent canvas — fixed in
+      // Scene.tsx (alpha:false + opaque background), not here. This just keeps the
+      // slab correct; the fade below blends colour → void instead of fading alpha.
+      transparent: false,
       depthWrite: true,
     });
     fill.onBeforeCompile = (sh) => {
@@ -144,7 +153,10 @@ export default function CountryMesh({
         .replace('#include <common>', `#include <common>\n${FADE_PARS}`)
         .replace(
           '#include <dithering_fragment>',
-          `${fadeFrag(FADE_IN, FADE_OUT)}\n  gl_FragColor.a *= fade;\n#include <dithering_fragment>`,
+          // Opaque fade: blend the lit colour toward the void (#050608) by the
+          // same distance falloff; `fadeFrag` still discards past the far edge so
+          // there's no hard opaque disc. No alpha → no transparent re-sort flicker.
+          `${fadeFrag(FADE_IN, FADE_OUT)}\n  gl_FragColor.rgb = mix(vec3(0.0196, 0.0235, 0.0314), gl_FragColor.rgb, fade);\n#include <dithering_fragment>`,
         );
     };
 

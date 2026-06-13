@@ -19,27 +19,14 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { CameraControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Projection } from './projection';
-
-const DEG = Math.PI / 180;
-
-/** Horizontal over-fit so the stadium extent lands in the central clear band
- *  between the 416px + 360px floating rails (~44% of a 1440px stage). We fit the
- *  extent into ~1/0.44 ≈ 2.3 of the width so no beacon hides under a rail. */
-const RAIL_MARGIN = 2.3;
-/** Polar angle from vertical for the overview (≤ 40°). */
-const OVERVIEW_POLAR = 38 * DEG;
-/** Viewing azimuth. With this orientation the scene renders north-up / east-right
- *  ("the map in your head"); verified empirically against the Baja peninsula and
- *  the curved Canadian north. Overview and city-focus share it so focusing eases
- *  a straight dolly-in (no 180° swing). */
-const VIEW_AZIMUTH = Math.PI;
-/** Target nudged north by this fraction of extent depth (visual mass balance). */
-const NORTH_NUDGE = 0.04;
-/** The left rail (416px) is wider than the right (360px), so the clear-band
- *  centre sits slightly RIGHT of the stage centre. Shift the look-point west by
- *  this fraction of extent width so the city cluster centres in the clear band
- *  (world −x renders LEFT, so a negative target.x moves the continent RIGHT). */
-const CONTENT_SHIFT_X = -0.07;
+import {
+  DEG,
+  OVERVIEW_POLAR,
+  VIEW_AZIMUTH,
+  DEFAULT_FOV,
+  camPosFor,
+  overviewFraming,
+} from './framing';
 
 export default function CameraRig({
   projection,
@@ -55,49 +42,16 @@ export default function CameraRig({
 
   const b = projection.stadiumBounds;
   const aspect = size.width / Math.max(1, size.height);
-
-  // Camera distance to fit the extent. Vertical fit uses the extent DEPTH; the
-  // horizontal fit uses WIDTH·RAIL_MARGIN against the horizontal FOV. Take the
-  // larger required distance so neither axis overflows the central band.
   const persp = camera as THREE.PerspectiveCamera;
-  const vFov = (persp.fov ?? 24) * DEG;
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+  const vFov = (persp.fov ?? DEFAULT_FOV) * DEG; // still used by the city-focus dolly
 
-  // The plane is tilted away from the camera; depth projects to roughly
-  // depth·cos(polar) on screen. Use a small inflation for safety.
-  const fitDepth = b.depth * Math.cos(OVERVIEW_POLAR) * 1.08;
-  const distForDepth = fitDepth / 2 / Math.tan(vFov / 2);
-  const distForWidth = (b.width * RAIL_MARGIN) / 2 / Math.tan(hFov / 2);
-  const overviewDist = Math.max(distForDepth, distForWidth);
-
-  // Target: extent centroid, nudged north (mass balance) and panned so the city
-  // cluster centres in the clear band between the asymmetric rails.
-  const tgt: [number, number, number] = [
-    b.centerX + b.width * CONTENT_SHIFT_X,
-    0,
-    b.centerZ - b.depth * NORTH_NUDGE,
-  ];
-
-  // Camera placed along the polar/azimuth direction at overviewDist. Azimuth 0
-  // (straight south of the target) keeps the continent square to the viewer.
-  // Camera sits SOUTH of the target (larger z) and above it, looking north so
-  // that smaller z (north — Canada/Vancouver) renders toward the TOP of the
-  // frame: "the map in your head". The z-offset is +sinP·cos(azimuth).
-  function camPosFor(
-    dist: number,
-    polar: number,
-    azimuth: number,
-    t: readonly [number, number, number],
-  ): [number, number, number] {
-    const sinP = Math.sin(polar);
-    return [
-      t[0] + dist * sinP * Math.sin(azimuth),
-      t[1] + dist * Math.cos(polar),
-      t[2] + dist * sinP * Math.cos(azimuth),
-    ];
-  }
-
-  const overviewPos = camPosFor(overviewDist, OVERVIEW_POLAR, VIEW_AZIMUTH, tgt);
+  // Overview placement comes from the pure helper in framing.ts, which is unit-
+  // tested by framing.test.ts (projects every beacon and asserts rail clearance).
+  const { position: overviewPos, target: tgt, overviewDist } = overviewFraming(
+    b,
+    aspect,
+    persp.fov ?? DEFAULT_FOV,
+  );
 
   // One-time setup: clamps + initial framing.
   useEffect(() => {

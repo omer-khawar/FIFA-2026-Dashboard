@@ -99,16 +99,25 @@ export default function Scene() {
       shadows={false}
       gl={{
         antialias: true,
-        alpha: true,
+        // OPAQUE: a transparent canvas + EffectComposer drops intermittent black
+        // frames during camera motion (the flashing). An opaque scene background
+        // gives the composer consistent input and kills the flicker.
+        alpha: false,
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.0,
       }}
       camera={{ fov: 24, near: 0.1, far: 400, position: [0, 12, 12] }}
-      style={{ position: 'absolute', inset: 0, background: 'transparent' }}
+      style={{ position: 'absolute', inset: 0 }}
     >
-      {/* Dim, even fill for the matte slabs — NO real point lights. */}
-      <ambientLight intensity={0.55} color="#8fa6cc" />
-      <hemisphereLight args={['#3a567f', '#05060a', 0.4]} />
+      {/* Opaque stage background (was the see-through CSS gradient). Matches the
+          void/pitch palette so the matte slabs and beacon glow read against it. */}
+      <color attach="background" args={['#080d18']} />
+
+      {/* Dim, even fill for the matte slabs — NO real point lights. Kept low so
+          the country fills read near-black/matte (§3.2); only the emissive edge
+          lines and beacon tips carry brightness against the void. */}
+      <ambientLight intensity={0.38} color="#8fa6cc" />
+      <hemisphereLight args={['#3a567f', '#05060a', 0.26]} />
 
       {projection && hostGeo && (
         <group name="mapRoot">

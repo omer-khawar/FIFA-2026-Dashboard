@@ -153,7 +153,11 @@ export default function Bracket() {
 
   const slotInfo = (match: Match, side: 'home' | 'away'): NodeSlotInfo => {
     const slot = side === 'home' ? match.home : match.away;
-    const score = side === 'home' ? match.homeScore : match.awayScore;
+    // Defect-2 parity with ticker/rail/spine: surface a score only once the match
+    // is live or finished. ESPN sends "0" pre-kickoff, so a knockout tie with
+    // assigned teams that hasn't started must read "–", never "0 – 0".
+    const rawScore = side === 'home' ? match.homeScore : match.awayScore;
+    const score = match.state === 'in' || match.state === 'post' ? rawScore : undefined;
     if (slot.kind === 'team') {
       const team = teams[slot.teamId];
       const isWinner = match.state === 'post' && match.winnerTeamId === slot.teamId;

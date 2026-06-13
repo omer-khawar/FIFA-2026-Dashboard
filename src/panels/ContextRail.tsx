@@ -354,10 +354,16 @@ function ContextPanel() {
 
   const heading = mode === 'venue' ? 'VENUE' : mode === 'team' ? 'TEAM' : 'NOW & NEXT';
 
+  // Auto-recede: when nothing is focused the rail dims so the map leads; a focus
+  // (venue/team) makes its content the active context, so it asserts fully. Hover
+  // / keyboard focus always assert.
+  const asserted = mode !== 'now';
+
   return (
     <section
-      className={`hud-corners relative flex h-full flex-col overflow-hidden ${FLOATING_PANEL}`}
+      className={`hud-corners relative flex h-full flex-col overflow-hidden transition-opacity duration-300 ease-[var(--ease-hud)] hover:opacity-100 focus-within:opacity-100 ${asserted ? 'opacity-100' : 'opacity-[0.72]'} ${FLOATING_PANEL}`}
       aria-label="Context"
+      data-active={asserted ? 'true' : undefined}
     >
       <div className="shrink-0 border-b border-hairline px-4 py-3 font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-dust">
         {heading}

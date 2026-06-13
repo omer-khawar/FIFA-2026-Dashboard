@@ -49,20 +49,21 @@ export default function App() {
 
       {/* Row 2 — Stage: full-bleed map behind two floating rails */}
       <div className="relative min-h-0">
-        {/* Stage: MapPanel fills inset-0 regardless of its own chrome. The map
-            agent will strip MapPanel's `.card` wrapper; until then we force the
-            wrapper to fill via descendant overrides so the map is full-bleed. */}
-        <div className="absolute inset-0 z-0 [&>.card]:!h-full [&>.card]:!min-h-0 [&>.card]:!rounded-none [&>.card]:!border-0">
+        {/* Stage: the full-bleed map sits behind the floating rails. */}
+        <div className="absolute inset-0 z-0">
           <MapPanel />
         </div>
 
-        {/* Left Rail — DATA DECK */}
-        <div className="absolute left-3 top-3 bottom-3 z-10 w-[416px] max-[1439px]:w-[360px]">
+        {/* Left Rail — DATA DECK. Slim idle width frees map; hover / keyboard
+            focus expands it as an overlay (camera is framed for the idle width,
+            so expansion never reframes the map). */}
+        <div className="absolute left-3 top-3 bottom-3 z-10 w-[336px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[420px] focus-within:w-[420px]">
           <DataDeck />
         </div>
 
-        {/* Right Rail — CONTEXT */}
-        <div className="absolute right-3 top-3 bottom-3 z-10 w-[360px] max-[1439px]:w-[320px]">
+        {/* Right Rail — CONTEXT. Right-anchored, so hover/focus expansion grows
+            leftward over the map as an overlay (camera unaffected). */}
+        <div className="absolute right-3 top-3 bottom-3 z-10 w-[308px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[372px] focus-within:w-[372px]">
           <ContextRail />
         </div>
       </div>

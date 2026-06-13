@@ -80,7 +80,7 @@ function DeckPanel() {
 
   return (
     <section
-      className={`group/deck hud-corners relative flex h-full flex-col overflow-hidden ${FLOATING_PANEL}`}
+      className={`group/deck hud-corners relative flex h-full flex-col overflow-hidden opacity-[0.72] transition-opacity duration-300 ease-[var(--ease-hud)] hover:opacity-100 focus-within:opacity-100 ${FLOATING_PANEL}`}
       aria-label="Data deck"
       onKeyDown={onKeyDown}
     >
