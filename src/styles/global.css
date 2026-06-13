@@ -1,18 +1,45 @@
-/* ── Design tokens ──────────────────────────────────────────────────────────── */
+@import "tailwindcss";
+
+/* ── Design tokens (Tailwind v4 CSS-first, blueprint §3.2) ──────────────────── */
+@theme {
+  --color-void:  #050608;             /* page base */
+  --color-pitch: #0B0E14;             /* panel base under glass */
+  --color-glass: rgb(13 16 24 / 0.55);
+  --color-hairline: rgb(255 255 255 / 0.06);
+  --color-neon:  #00E5FF;             /* data / interactive / home-win */
+  --color-ember: #FF7A1A;             /* energy / today / away-win */
+  --color-live:  #FF4655;             /* live only — never decorative */
+  --color-chalk: #EAF2FF;             /* primary text */
+  --color-dust:  #7E8AA3;             /* secondary text */
+  --color-gold:  #FFC53D;             /* champion odds accents */
+
+  /* Display face — exposes a `font-display` utility (font-family: Rajdhani…) */
+  --font-display: "Rajdhani", "Inter", sans-serif;
+}
+
+/* ── Legacy aliases ────────────────────────────────────────────────────────────
+   The existing map/panels CSS still references the original custom properties.
+   Keep them mapped 1:1 onto the new palette so nothing visually breaks until the
+   parallel agents migrate. Do NOT remove until map/** + panels/** are migrated. */
 :root {
-  --bg0:    #070b14;
-  --bg1:    #0d1424;
-  --panel:  rgba(255, 255, 255, 0.04);
-  --line:   rgba(255, 255, 255, 0.08);
-  --text:   #e8eefc;
-  --muted:  #8b97b0;
-  --accent: #22d3ee;
-  --live:   #f43f5e;
-  --gold:   #fbbf24;
+  --bg0:    #050608;                  /* → void */
+  --bg1:    #0B0E14;                  /* → pitch */
+  --panel:  rgb(13 16 24 / 0.55);     /* → glass */
+  --line:   rgb(255 255 255 / 0.06);  /* → hairline */
+  --text:   #EAF2FF;                  /* → chalk */
+  --muted:  #7E8AA3;                  /* → dust */
+  --accent: #00E5FF;                  /* → neon */
+  --live:   #FF4655;                  /* → live */
+  --gold:   #FFC53D;                  /* → gold */
 
   --radius: 14px;
   --gap:    12px;
   --font:   'Inter', system-ui, -apple-system, sans-serif;
+
+  /* HUD motion curve (blueprint §3.6) */
+  --ease-hud: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: dark;
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────────── */
@@ -22,77 +49,87 @@
   padding: 0;
 }
 
+/* No page scrollbar may ever exist (blueprint §1.1). The shell owns the viewport;
+   internal panels own their own scroll. */
 html, body, #root {
   height: 100%;
-  min-height: 100vh;
+  overflow: hidden;
 }
 
 body {
-  background-color: var(--bg0);
-  color: var(--text);
+  background-color: var(--color-void);
+  color: var(--color-chalk);
   font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;   /* global tabular numerals (§3.3) */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Layered page background (blueprint §3.2): void base + two radial floodlight
+     gradients (top-center cyan 4%, bottom-right ember 3%) + 3% noise data-URI to
+     kill banding. */
+  background-image:
+    radial-gradient(ellipse 90vw 60vh at 50% -8%, rgb(0 229 255 / 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 70vw 60vh at 100% 100%, rgb(255 122 26 / 0.03) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-attachment: fixed;
 }
 
-/* ── Subtle radial glow background ─────────────────────────────────────────── */
-#root::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 80vw 60vh at 20% 10%, rgba(34, 211, 238, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 60vw 50vh at 80% 80%, rgba(139, 92, 246, 0.04) 0%, transparent 60%);
+/* ── Typography utilities ──────────────────────────────────────────────────────
+   .font-display kept for direct className use; Tailwind's `font-display` utility
+   is also generated from the --font-display @theme token above. */
+.font-display { font-family: 'Rajdhani', 'Inter', sans-serif; }
+
+h1, h2, h3 {
+  font-weight: 600;
+  line-height: 1.2;
 }
 
-/* ── Page layout grid ───────────────────────────────────────────────────────── */
-.app-grid {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  min-height: 100vh;
-  padding: var(--gap);
-  gap: var(--gap);
-  grid-template-columns: 58fr 42fr;
-  grid-template-rows: auto minmax(420px, 58vh) auto auto auto;
-  grid-template-areas:
-    "header   header"
-    "map      bracket"
-    "strip    strip"
-    "groups   odds"
-    "news     news";
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
-/* ── Responsive: stack to single column < 1000px ──────────────────────────── */
-@media (max-width: 999px) {
-  .app-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto auto auto auto auto;
-    grid-template-areas:
-      "header"
-      "map"
-      "bracket"
-      "strip"
-      "groups"
-      "odds"
-      "news";
-  }
+/* ── Live pulse (blueprint §3.6) ───────────────────────────────────────────────
+   box-shadow ring expanding outward then fading; 1.6s infinite. */
+@keyframes pulse-live {
+  0%   { box-shadow: 0 0 0 0 rgb(255 70 85 / 0.4); }
+  100% { box-shadow: 0 0 0 8px rgb(255 70 85 / 0); }
 }
 
-/* ── Grid area assignments ──────────────────────────────────────────────────── */
-.area-header  { grid-area: header; }
-.area-map     { grid-area: map; }
-.area-bracket { grid-area: bracket; }
-.area-strip   { grid-area: strip; }
-.area-groups  { grid-area: groups; }
-.area-odds    { grid-area: odds; }
-.area-news    { grid-area: news; }
+/* ── Legacy keyframes / helpers still referenced by panels & map ─────────────── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
 
-/* ── Shared glass card ──────────────────────────────────────────────────────── */
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* ── Card compatibility (old panels still use `.card`) ─────────────────────────
+   Minimal surface so wrapped legacy components keep their chrome until the panels
+   agent replaces them. The shell positions these; the old page-grid is gone. */
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -113,16 +150,8 @@ body {
   margin-bottom: 8px;
 }
 
-/* ── Typography ─────────────────────────────────────────────────────────────── */
-h1, h2, h3 {
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
+/* `.area-*` classes are inert outside a grid; legacy components emit them but the
+   shell no longer uses grid-template-areas, so they are harmless. */
 
 /* ── Utility ─────────────────────────────────────────────────────────────────── */
 .tabular { font-variant-numeric: tabular-nums; }
@@ -130,36 +159,6 @@ a {
 .accent  { color: var(--accent); }
 .live-color { color: var(--live); }
 .gold    { color: var(--gold); }
-
-/* ── Live pulse animation ───────────────────────────────────────────────────── */
-@keyframes live-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
-}
-
-.live-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--live);
-  animation: live-pulse 1.2s ease-in-out infinite;
-}
-
-/* ── Loading spinner ─────────────────────────────────────────────────────────── */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.spinner {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
@@ -184,4 +183,15 @@ a {
 .flag-sm {
   width: 18px;
   height: 12px;
+}
+
+/* ── Reduced motion (blueprint §3.6): kill drift / ripples / pulses; keep state
+   colors. ──────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
