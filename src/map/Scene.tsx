@@ -15,7 +15,7 @@
 
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Vignette, SMAA } from '@react-three/postprocessing';
 import * as THREE from 'three';
 
 import { useWorldCup } from '../data/store';
@@ -98,7 +98,7 @@ export default function Scene() {
       dpr={[1, 2]}
       shadows={false}
       gl={{
-        antialias: true,
+        antialias: false,
         // OPAQUE: a transparent canvas + EffectComposer drops intermittent black
         // frames during camera motion (the flashing). An opaque scene background
         // gives the composer consistent input and kills the flicker.
@@ -152,7 +152,9 @@ export default function Scene() {
         />
       )}
 
-      <EffectComposer>
+      {/* multisampling={0}: the composer's MSAA resolve was dropping the base
+          scene on some motion frames (the black flashing). SMAA does AA instead. */}
+      <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
           intensity={0.7}
@@ -160,6 +162,7 @@ export default function Scene() {
           luminanceSmoothing={0.2}
         />
         <Vignette eskil={false} offset={0.3} darkness={0.85} />
+        <SMAA />
       </EffectComposer>
     </Canvas>
   );
