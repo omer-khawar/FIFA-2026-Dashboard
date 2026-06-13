@@ -1,104 +1,116 @@
 /**
- * StadiumBeacon.tsx — emissive marker at a projected stadium position.
+ * StadiumBeacon.tsx — one beacon "instrument" per host stadium (blueprint §2.6).
  *
- * Visual parts (no real lights — emissive + bloom only):
- *   - a small emissive base disc on the slab top
- *   - a thin vertical light pillar (cylinder, additive, transparent)
- *   - a billboarded radial-gradient glow sprite
+ * From blobs to instruments. The stack, all children of mapRoot (no billboarding,
+ * no real lights — emissive + bloom only), sizes relative to map width M=SCENE_WIDTH:
+ *   (a) anchor ring   — flat annulus on the slab top, outer r ≈ 0.008·M, radar
+ *                       ripple shader (period 2.4s).
+ *   (b) needle pillar — thin vertical cylinder, height ≈ 0.05·M, additive, alpha
+ *                       = pow(1−uv.y, 2.2). Y-up in mapRoot local space, NEVER
+ *                       billboarded (this is what killed the diagonal streak).
+ *   (c) tip core      — icosahedron, the ONLY high-emissive element (2–6 HDR) —
+ *                       the only thing the threshold-1.0 bloom should bite.
+ *   (d) hover         — drei Html micro-label (STADIUM · CITY), ring brightens,
+ *                       cursor pointer. Click → setFocusVenue(venueId).
  *
- * States (driven by store data, passed in as props):
- *   - idle        cool cyan, subtle
- *   - today       warm amber, brighter (a match is played here today, local date)
- *   - live        red-hot, pulsing scale + intensity via useFrame sine
+ * State machine (blueprint §2.6 table):
+ *   idle  #00E5FF e1.6  ripple ×1
+ *   today #FF7A1A e2.4  ripple ×1.5
+ *   LIVE  #FF4655 e=3+2·sin(4t)  ripple ×2  + pillar height pulse ±15%
  *
- * Hover → pointer cursor + drei <Html> label (stadium + city).
- * Click → setFocusVenue(venueId).
+ * Beacon base y = slabDepth (sits ON the slab top face), passed in as `baseY`.
  */
 
 import { useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Html } from '@react-three/drei';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Stadium } from '../lib/types';
+import { SCENE_WIDTH } from './projection';
+import { createRingMaterial, createPillarMaterial } from './beaconMaterials';
 
 export type BeaconState = 'idle' | 'today' | 'live';
 
-const PALETTE: Record<BeaconState, { core: string; glow: string; intensity: number; pillarH: number }> = {
-  idle: { core: '#38e2ff', glow: '#22d3ee', intensity: 1.4, pillarH: 0.55 },
-  today: { core: '#ffce5c', glow: '#fbbf24', intensity: 2.4, pillarH: 0.85 },
-  live: { core: '#ff5a6e', glow: '#f43f5e', intensity: 3.6, pillarH: 1.15 },
-};
+const M = SCENE_WIDTH;
+const RING_OUTER = 0.008 * M; // ≈0.08
+const RING_INNER = RING_OUTER * 0.35;
+const PILLAR_H = 0.05 * M; // ≈0.5
+const PILLAR_R = 0.0016 * M; // thin needle
+const TIP_R = 0.011 * M;
 
-/** Reusable radial-gradient sprite texture for the soft glow. */
-function makeGlowTexture(): THREE.Texture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+interface StateCfg {
+  color: string;
+  emissive: number; // base (live adds sine)
+  ripple: number; // ripple speed multiplier
 }
+const STATES: Record<BeaconState, StateCfg> = {
+  idle: { color: '#00E5FF', emissive: 1.6, ripple: 1 },
+  today: { color: '#FF7A1A', emissive: 2.4, ripple: 1.5 },
+  live: { color: '#FF4655', emissive: 3, ripple: 2 },
+};
 
 export default function StadiumBeacon({
   stadium,
   position,
+  baseY,
   state,
   focused,
+  reducedMotion,
   onFocus,
 }: {
   stadium: Stadium;
-  position: [number, number]; // [worldX, worldZ]
+  position: [number, number]; // [sceneX, sceneZ]
+  baseY: number; // slab top face (extrude depth)
   state: BeaconState;
   focused: boolean;
+  reducedMotion: boolean;
   onFocus: (venueId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const groupRef = useRef<THREE.Group>(null);
-  const pillarRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Sprite>(null);
-
-  const glowTex = useMemo(makeGlowTexture, []);
-  const cfg = PALETTE[state];
   const [x, z] = position;
+  const cfg = STATES[state];
 
-  // Pulse only for live; today/idle hold steady (a subtle breathe on hover).
+  // Own ShaderMaterial instances (shared program; per-instance uniforms).
+  const ringMat = useMemo(createRingMaterial, []);
+  const pillarMat = useMemo(createPillarMaterial, []);
+  const color = useMemo(() => new THREE.Color(cfg.color), [cfg.color]);
+
+  const tipMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const pillarRef = useRef<THREE.Mesh>(null);
+
   useFrame((st) => {
     const t = st.clock.elapsedTime;
-    let scale = 1;
-    let glowScale = 1;
-    if (state === 'live') {
-      const s = (Math.sin(t * 4) + 1) / 2; // 0..1
-      scale = 1 + s * 0.5;
-      glowScale = 1 + s * 0.6;
-    } else if (hovered || focused) {
-      const s = (Math.sin(t * 3) + 1) / 2;
-      glowScale = 1 + s * 0.18;
-    }
+    const active = hovered || focused;
+
+    // Ring uniforms
+    ringMat.uniforms.uTime.value = reducedMotion ? 0 : t;
+    ringMat.uniforms.uSpeed.value = cfg.ripple;
+    ringMat.uniforms.uBright.value = active ? 1.6 : 1.0;
+    (ringMat.uniforms.uColor.value as THREE.Color).copy(color);
+
+    // Pillar uniforms + live height pulse (±15%)
+    (pillarMat.uniforms.uColor.value as THREE.Color).copy(color);
+    pillarMat.uniforms.uBright.value = active ? 1.15 : 0.9;
     if (pillarRef.current) {
-      pillarRef.current.scale.y = scale;
-      // keep base on the slab as it grows upward
-      pillarRef.current.position.y = (cfg.pillarH * scale) / 2;
+      let sy = 1;
+      if (state === 'live' && !reducedMotion) {
+        sy = 1 + 0.15 * Math.sin(t * 4);
+      }
+      pillarRef.current.scale.y = sy;
     }
-    if (glowRef.current) {
-      const base = (hovered || focused ? 1.5 : 1.2) * glowScale;
-      glowRef.current.scale.setScalar(base);
+
+    // Tip emissive — the only HDR element
+    if (tipMatRef.current) {
+      let e = cfg.emissive;
+      if (state === 'live' && !reducedMotion) e = 3 + 2 * Math.sin(t * 4);
+      if (active) e *= 1.25;
+      tipMatRef.current.emissiveIntensity = e;
     }
   });
 
-  const pillarRadius = 0.012;
-  const discRadius = focused || hovered ? 0.085 : 0.065;
-
   return (
     <group
-      ref={groupRef}
-      position={[x, 0, z]}
+      position={[x, baseY, z]}
       onPointerOver={(e) => {
         e.stopPropagation();
         setHovered(true);
@@ -113,75 +125,90 @@ export default function StadiumBeacon({
         onFocus(stadium.venueId);
       }}
     >
-      {/* base disc on the slab */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
-        <circleGeometry args={[discRadius, 32]} />
-        <meshBasicMaterial color={cfg.core} toneMapped={false} transparent opacity={0.95} />
+      {/* (a) anchor ring — flat annulus on the slab top */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} material={ringMat}>
+        <ringGeometry args={[RING_INNER, RING_OUTER, 48]} />
       </mesh>
 
-      {/* faint outer ring on the slab */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-        <ringGeometry args={[discRadius * 1.3, discRadius * 1.9, 40]} />
-        <meshBasicMaterial color={cfg.glow} toneMapped={false} transparent opacity={0.35} />
+      {/* invisible larger hit target so the tiny beacon is easy to click/hover */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} visible={false}>
+        <circleGeometry args={[RING_OUTER * 2.2, 16]} />
       </mesh>
 
-      {/* vertical light pillar */}
-      <mesh ref={pillarRef} position={[0, cfg.pillarH / 2, 0]}>
-        <cylinderGeometry args={[pillarRadius, pillarRadius * 1.6, cfg.pillarH, 12, 1, true]} />
-        <meshBasicMaterial
-          color={cfg.core}
-          toneMapped={false}
-          transparent
-          opacity={0.7}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
+      {/* (b) needle pillar — Y-up in local space, never billboarded */}
+      <mesh ref={pillarRef} position={[0, PILLAR_H / 2, 0]} material={pillarMat}>
+        <cylinderGeometry args={[PILLAR_R, PILLAR_R * 1.4, PILLAR_H, 8, 1, true]} />
       </mesh>
 
-      {/* billboarded glow sprite */}
-      <sprite ref={glowRef} position={[0, 0.04, 0]} scale={1.2}>
-        <spriteMaterial
-          map={glowTex}
-          color={cfg.glow}
-          transparent
-          opacity={Math.min(0.9, 0.35 + cfg.intensity * 0.12)}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
+      {/* (c) tip core — the only high-emissive element */}
+      <mesh position={[0, PILLAR_H, 0]}>
+        <icosahedronGeometry args={[TIP_R, 0]} />
+        <meshStandardMaterial
+          ref={tipMatRef}
+          color={cfg.color}
+          emissive={cfg.color}
+          emissiveIntensity={cfg.emissive}
+          roughness={0.3}
+          metalness={0}
           toneMapped={false}
         />
-      </sprite>
+      </mesh>
 
-      {/* hover label */}
+      {/* (d) hover label */}
       {(hovered || focused) && (
-        <Billboard position={[0, cfg.pillarH + 0.18, 0]}>
-          <Html center distanceFactor={8} style={{ pointerEvents: 'none' }} zIndexRange={[50, 0]}>
+        <Html
+          position={[0, PILLAR_H + TIP_R * 2.2, 0]}
+          center
+          distanceFactor={6}
+          style={{ pointerEvents: 'none', userSelect: 'none' }}
+          zIndexRange={[40, 0]}
+        >
+          <div
+            className="font-display"
+            style={{
+              whiteSpace: 'nowrap',
+              transform: 'translateY(-50%)',
+              padding: '5px 10px',
+              borderRadius: 6,
+              background: 'rgb(13 16 24 / 0.78)',
+              border: '1px solid rgb(255 255 255 / 0.08)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              boxShadow: '0 6px 24px rgb(0 0 0 / 0.5)',
+              textAlign: 'center',
+              lineHeight: 1.25,
+            }}
+          >
             <div
               style={{
-                whiteSpace: 'nowrap',
-                transform: 'translateY(-50%)',
-                padding: '4px 9px',
-                borderRadius: 8,
-                background: 'rgba(8, 12, 22, 0.85)',
-                border: '1px solid var(--line, rgba(255,255,255,0.12))',
-                color: '#e8eefc',
-                fontFamily: "'Inter', system-ui, sans-serif",
-                fontSize: 11,
-                fontWeight: 600,
-                lineHeight: 1.25,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-                backdropFilter: 'blur(6px)',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                color: '#EAF2FF',
               }}
             >
-              <div>{stadium.name}</div>
-              <div style={{ fontSize: 9.5, fontWeight: 500, color: '#8b97b0' }}>
-                {stadium.city}
-                {state === 'live' && <span style={{ color: '#f43f5e' }}> · LIVE</span>}
-                {state === 'today' && <span style={{ color: '#fbbf24' }}> · TODAY</span>}
-              </div>
+              {stadium.name}
             </div>
-          </Html>
-        </Billboard>
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color:
+                  state === 'live'
+                    ? '#FF4655'
+                    : state === 'today'
+                      ? '#FF7A1A'
+                      : '#7E8AA3',
+              }}
+            >
+              {stadium.city}
+              {state === 'live' && ' · LIVE'}
+              {state === 'today' && ' · TODAY'}
+            </div>
+          </div>
+        </Html>
       )}
     </group>
   );

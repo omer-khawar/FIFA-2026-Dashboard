@@ -1,15 +1,106 @@
 /**
- * TopBar.tsx — SHELL STUB (Phase 1). The panels agent rewrites the internals to
- * the §1.6 lockup + 2px neon progress bar + refresh treatment. For now it wraps
- * the EXISTING <Header/> inside a 52px transparent bar (no card chrome) so the
- * app renders end-to-end. Export name is frozen: default `TopBar`.
+ * TopBar.tsx — HUD top bar (blueprint §1.6, defect 6).
+ *
+ * 52px, no card chrome — floats on the stage gradient. Left: WC26 display lockup.
+ * Right-aligned controls: stage progress (n/104 completed, a LEGIBLE 2px neon bar
+ * on a hairline track), "Updated HH:MM", and an icon-only Refresh button whose
+ * glyph spins while refresh() is in flight (no layout shift). Export name frozen.
  */
-import Header from './Header';
+import { useState } from 'react';
+import { useWorldCup } from '../data/store';
+import { kickoffTime } from '../lib/format';
 
 export default function TopBar() {
+  const status = useWorldCup((s) => s.status);
+  const lastUpdated = useWorldCup((s) => s.lastUpdated);
+  const matches = useWorldCup((s) => s.matches);
+  const refresh = useWorldCup((s) => s.refresh);
+  const [spinning, setSpinning] = useState(false);
+
+  const played = matches.filter((m) => m.state === 'post').length;
+  const pct = Math.max(0, Math.min(100, (played / 104) * 100));
+  const isSpinning = spinning || status === 'loading';
+
+  const handleRefresh = async () => {
+    if (spinning) return;
+    setSpinning(true);
+    try {
+      await refresh();
+    } finally {
+      setSpinning(false);
+    }
+  };
+
   return (
-    <div className="relative z-40 h-[52px] w-full overflow-hidden [&_.card]:!h-full [&_.card]:!rounded-none [&_.card]:!border-0 [&_.card]:!bg-transparent [&_.card]:!backdrop-blur-none [&_.card]:!py-0 [&_.card]:flex [&_.card]:items-center">
-      <Header />
-    </div>
+    <header className="relative z-40 flex h-[52px] w-full items-center gap-4 px-4">
+      {/* Lockup */}
+      <div className="flex min-w-0 items-baseline gap-2 font-display">
+        <span className="text-[20px] font-bold leading-none tracking-[0.04em] text-chalk">
+          WC<span className="text-neon">26</span>
+        </span>
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.28em] text-dust sm:inline">
+          Live Tracker
+        </span>
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Right-aligned controls */}
+      <div className="flex items-center gap-4">
+        {/* Stage progress — n/104 + 2px neon bar on hairline track */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-baseline gap-1 font-display tabular-nums leading-none">
+            <span className="text-[14px] font-bold text-chalk">{played}</span>
+            <span className="text-[11px] text-dust">/ 104</span>
+          </div>
+          <div
+            className="hidden h-[2px] w-[140px] overflow-hidden rounded-full bg-hairline md:block"
+            role="progressbar"
+            aria-valuenow={played}
+            aria-valuemin={0}
+            aria-valuemax={104}
+            aria-label="Matches completed"
+          >
+            <div
+              className="h-full rounded-full bg-neon shadow-[0_0_8px_rgb(0_229_255/0.7)] transition-[width] duration-700 ease-[var(--ease-hud)]"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Last updated */}
+        {lastUpdated && (
+          <div className="hidden whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.16em] text-dust lg:block">
+            Updated {kickoffTime(lastUpdated)}
+          </div>
+        )}
+
+        {/* Refresh — icon-only; glyph itself rotates while in flight (no layout shift) */}
+        <button
+          onClick={() => void handleRefresh()}
+          disabled={isSpinning}
+          aria-label="Refresh data"
+          title="Refresh"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-hairline text-dust transition-colors hover:border-neon/40 hover:text-neon disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 13 13"
+            fill="none"
+            aria-hidden="true"
+            className={isSpinning ? 'origin-center animate-[spin_0.7s_linear_infinite]' : ''}
+          >
+            <path
+              d="M11 6.5A4.5 4.5 0 1 1 6.5 2a4.47 4.47 0 0 1 3.18 1.32L8.5 4.5H12V1l-1.32 1.32A6 6 0 1 0 12.5 6.5"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
   );
 }

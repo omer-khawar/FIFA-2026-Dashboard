@@ -1,85 +1,50 @@
 /**
- * MapPanel.tsx — card wrapper for the 3D host-cities map (the visual hero).
+ * MapPanel.tsx — the full-bleed STAGE root (blueprint §2 / §9).
  *
- * Holds the r3f <Scene> Canvas over a CSS radial gradient, the <CityPopover>
- * DOM overlay, and a tiny legend. Renders a skeleton until hostGeo + stadiums
- * arrive (store may briefly be 'loading'). Export shape preserved from the stub:
- * a default function rendering `.card area-map`.
+ * No more `.card` chrome: the map is the stage behind the floating HUD rails.
+ * MapPanel is just `h-full w-full relative` and holds the r3f <Scene> over a
+ * radial backdrop plus a minimal legend (bottom-left glass pill of LIVE / TODAY /
+ * VENUE micro-label chips in the three state colors). City details now live in
+ * the Context Rail (a parallel agent), driven by store.focusVenueId which the
+ * beacons set on click — CityPopover is deleted. Hover labels stay in-canvas.
+ *
+ * Renders a skeleton until hostGeo + stadiums arrive. Export name preserved.
  */
 
 import { Suspense } from 'react';
 import { useWorldCup } from '../data/store';
 import Scene from './Scene';
-import CityPopover from './CityPopover';
+
+const LEGEND: Array<{ label: string; color: string }> = [
+  { label: 'LIVE', color: '#FF4655' },
+  { label: 'TODAY', color: '#FF7A1A' },
+  { label: 'VENUE', color: '#00E5FF' },
+];
 
 function Legend() {
-  const dot = (color: string): React.CSSProperties => ({
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: color,
-    boxShadow: `0 0 7px ${color}`,
-    flexShrink: 0,
-  });
-  const item: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 10,
-    fontWeight: 600,
-    color: '#8b97b0',
-    letterSpacing: '0.03em',
-  };
   return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 16,
-        bottom: 16,
-        zIndex: 10,
-        display: 'flex',
-        gap: 14,
-        padding: '8px 12px',
-        borderRadius: 10,
-        background: 'rgba(10, 15, 26, 0.6)',
-        border: '1px solid var(--line)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        pointerEvents: 'none',
-      }}
-    >
-      <span style={item}>
-        <span style={dot('#f43f5e')} />
-        LIVE
-      </span>
-      <span style={item}>
-        <span style={dot('#fbbf24')} />
-        TODAY
-      </span>
-      <span style={item}>
-        <span style={dot('#22d3ee')} />
-        VENUE
-      </span>
+    <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-full border border-hairline bg-glass px-3.5 py-1.5 backdrop-blur-xl">
+      {LEGEND.map(({ label, color }) => (
+        <span
+          key={label}
+          className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-dust"
+        >
+          <span
+            className="h-[7px] w-[7px] flex-shrink-0 rounded-full"
+            style={{ background: color, boxShadow: `0 0 7px ${color}` }}
+          />
+          {label}
+        </span>
+      ))}
     </div>
   );
 }
 
 function MapSkeleton() {
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-        color: 'var(--muted)',
-      }}
-    >
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-dust">
       <span className="spinner" style={{ width: 22, height: 22, borderWidth: 3 }} />
-      <span style={{ fontSize: 12 }}>Rendering host map…</span>
+      <span className="text-[12px]">Rendering host map…</span>
     </div>
   );
 }
@@ -88,47 +53,19 @@ export default function MapPanel() {
   const ready = useWorldCup((s) => s.hostGeo != null && s.stadiums.length > 0);
 
   return (
-    <div
-      className="card area-map"
-      style={{
-        position: 'relative',
-        minHeight: 420,
-        padding: 0,
-        overflow: 'hidden',
-      }}
-    >
-      {/* card title overlay */}
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Radial floodlight backdrop behind the transparent canvas. */}
       <div
+        className="absolute inset-0"
         style={{
-          position: 'absolute',
-          top: 14,
-          left: 16,
-          zIndex: 10,
-          pointerEvents: 'none',
-        }}
-      >
-        <div className="card-label" style={{ margin: 0 }}>
-          HOST CITIES
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', opacity: 0.7 }}>
-          USA · Canada · Mexico
-        </div>
-      </div>
-
-      {/* CSS radial gradient backdrop behind the transparent canvas */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
           background:
-            'radial-gradient(ellipse 90% 75% at 50% 38%, #0e1830 0%, #0a1020 45%, #060a12 100%)',
+            'radial-gradient(ellipse 80% 70% at 50% 42%, #0c1424 0%, #080d18 48%, #050608 100%)',
         }}
       />
 
       {ready ? (
         <Suspense fallback={<MapSkeleton />}>
           <Scene />
-          <CityPopover />
           <Legend />
         </Suspense>
       ) : (

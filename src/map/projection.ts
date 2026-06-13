@@ -1,134 +1,192 @@
 /**
- * projection.ts — single source of truth that maps geographic coordinates
- * (lon, lat) onto the flat scene plane shared by the country slabs and the
- * stadium beacons.
+ * projection.ts — the SINGLE source of truth that maps geographic (lon, lat)
+ * onto the flat scene ground plane (XZ, +Y up) shared by the country slabs and
+ * the stadium beacons.
  *
- * We use d3-geo's geoMercator().fitExtent over the clipped hosts GeoJSON so the
- * three host countries fill a fixed pixel box, then linearly remap that box into
- * a centered world plane of width PLANE_WIDTH (in world units). The world plane
- * lives in XZ (the map lies flat, viewed from a raised camera), so:
- *   - d3 screen x  →  world x   (east is +x)
- *   - d3 screen y  →  world z   FLIPPED (north is -z, i.e. "up/away" from camera)
+ * Projection (blueprint §2.2): Lambert Conformal Conic, the cartographic
+ * standard for a mid-latitude continent. Mercator was the wrong tool — it
+ * stretches Canada ~60% taller per degree than Mexico, so once the camera tilts
+ * the distortion reads as "wrong" rather than stylized. Between its two standard
+ * parallels (17.5°N / 49.5°N — bracketing all 16 host cities) LCC distortion is
+ * <≈2.5% across our extent: shapes and bearings read true and Canada's northern
+ * border curves naturally.
  *
- * Flipping y is essential: d3 screen-space y grows downward, but we want north
- * (Canada/Vancouver) to sit at smaller z (further from a camera looking down the
- * +z axis) and south (Mexico City) at larger z. A sanity check in the dev test
- * verifies Mexico ends up south of Canada.
+ *   geoConicConformal()
+ *     .parallels([17.5, 49.5])   // bracket all 16 cities
+ *     .rotate([96, 0])           // central meridian 96°W — the continent spine
+ *     .fitExtent(box, stadiumExtentFeature)
+ *
+ * We FIT THE CITIES, not the country polygons (blueprint §2.2): the fit feature
+ * is the bbox of the 16 stadium coordinates padded ~7%. Geography is the
+ * backdrop and may legitimately overflow the fitted box (Canada's far north,
+ * Mexico's south) — that overflow is faded out in the scene, never clipped here.
+ *
+ * Scene mapping (blueprint §2.3 — ONE transform chain):
+ *   d3 pixel (px, py)  →  scene  x = (px − cx) · s,  z = (py − cy) · s
+ * where (cx, cy) is the CENTER of the fitted stadium extent box and s scales the
+ * fit-box width to SCENE_WIDTH world units. d3 screen-y grows downward (south),
+ * which we keep: north → smaller z (further from a downward-looking camera),
+ * south (Mexico City) → larger z. No y-flip, no second fitExtent anywhere.
+ *
+ * `projectToScene(lon, lat) → [x, z]` is the ONE helper used by EVERYTHING
+ * (country meshes, beacons, camera). `buildProjection(hostGeo, stadiums)` returns
+ * it plus the scene-space bounds of the stadium extent for the camera rig.
  */
 
-import { geoMercator } from 'd3-geo';
+import { geoConicConformal } from 'd3-geo';
 import type { GeoProjection } from 'd3-geo';
-import type { FeatureCollection } from 'geojson';
+import type { FeatureCollection, Feature, Polygon } from 'geojson';
 
-/** Width of the scene plane in world units. Clean round number. */
-export const PLANE_WIDTH = 10;
+/** Width of the fitted stadium extent in scene/world units. The cities span
+ *  ~SCENE_WIDTH across the central stage; geography overflows beyond. */
+export const SCENE_WIDTH = 10;
 
-/** Padding (world units) kept between the country bounds and the plane edges. */
-const PLANE_PADDING = 0.4;
+/** Fraction the stadium bbox is padded by before fitting (blueprint §2.2: 6–8%). */
+const STADIUM_PAD = 0.07;
+
+/** Abstract pixel box the stadium extent is fitted into. Square; the projection
+ *  preserves aspect, so the realized box just determines pixels-per-degree. */
+const FIT_PX = 1000;
+
+export interface StadiumLike {
+  lon: number;
+  lat: number;
+}
 
 export interface Projection {
-  /** Project geographic (lon, lat) → world [x, z] on the flat map plane. */
+  /** The ONE helper: geographic (lon, lat) → scene [x, z] on the XZ plane. */
+  projectToScene(lon: number, lat: number): [number, number];
+  /** @deprecated alias kept for existing callers; identical to projectToScene. */
   project(lon: number, lat: number): [number, number];
-  /** Plane extents in world units (centered on origin). */
+  /** Scene-space half-extents of the fitted STADIUM bbox (camera framing). */
+  stadiumBounds: {
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    width: number;
+    depth: number;
+    centerX: number;
+    centerZ: number;
+  };
+  /** Width of the stadium extent in scene units (== SCENE_WIDTH). */
   width: number;
+  /** Depth (N–S) of the stadium extent in scene units. */
   height: number;
-  /** half-extents, handy for camera framing. */
   halfWidth: number;
   halfHeight: number;
 }
 
-/**
- * Build the projection for a given hosts FeatureCollection. Derived once and
- * memoized by the caller — never per frame.
- */
-export function buildProjection(hostGeo: FeatureCollection): Projection {
-  // Fit the geography into an abstract pixel box; the box's aspect ratio is
-  // determined by the geography itself via fitSize on a tall canvas, then we
-  // read back the realized bounds to compute the true aspect.
-  const FIT_W = 1000;
-  const FIT_H = 1000;
-
-  const proj: GeoProjection = geoMercator().fitExtent(
-    [
-      [0, 0],
-      [FIT_W, FIT_H],
-    ],
-    hostGeo,
-  );
-
-  // Realized pixel bounds of the geography under this projection.
-  const bounds = geoBounds(hostGeo, proj);
-  const [[minX, minY], [maxX, maxY]] = bounds;
-  const pxW = maxX - minX || 1;
-  const pxH = maxY - minY || 1;
-
-  // World plane: width fixed; height follows the geography's aspect ratio.
-  const innerW = PLANE_WIDTH - PLANE_PADDING * 2;
-  const innerH = innerW * (pxH / pxW);
-  const width = PLANE_WIDTH;
-  const height = innerH + PLANE_PADDING * 2;
-
-  const scale = innerW / pxW; // world units per pixel (uniform, aspect preserved)
-
-  function project(lon: number, lat: number): [number, number] {
-    const p = proj([lon, lat]);
-    if (!p) return [0, 0];
-    const [px, py] = p;
-    // Center the realized bounds, scale to world units.
-    const x = (px - (minX + maxX) / 2) * scale;
-    // Map d3 screen-y → world z. d3 north = small py (top of screen). We want
-    // north FURTHER from the camera (negative z) and south NEARER (positive z),
-    // so north must map to negative z: z = (py - cy). For a far-north city like
-    // Vancouver, py is small ⇒ z negative; for Mexico City, py large ⇒ z positive.
-    const z = (py - (minY + maxY) / 2) * scale;
-    return [x, z];
+/** Build the padded bounding-box Feature of the 16 stadium coordinates. This —
+ *  not the country polygons — is what the projection is fitted to. */
+export function buildStadiumExtentFeature(stadiums: StadiumLike[]): Feature<Polygon> {
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const s of stadiums) {
+    if (s.lon < minLon) minLon = s.lon;
+    if (s.lon > maxLon) maxLon = s.lon;
+    if (s.lat < minLat) minLat = s.lat;
+    if (s.lat > maxLat) maxLat = s.lat;
   }
-
+  const padLon = (maxLon - minLon) * STADIUM_PAD;
+  const padLat = (maxLat - minLat) * STADIUM_PAD;
+  minLon -= padLon;
+  maxLon += padLon;
+  minLat -= padLat;
+  maxLat += padLat;
   return {
-    project,
-    width,
-    height,
-    halfWidth: width / 2,
-    halfHeight: height / 2,
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [minLon, minLat],
+          [maxLon, minLat],
+          [maxLon, maxLat],
+          [minLon, maxLat],
+          [minLon, minLat],
+        ],
+      ],
+    },
   };
 }
 
 /**
- * Compute the realized pixel bounding box of a FeatureCollection under a
- * projection by walking every coordinate (the geometries here are small).
+ * Build the projection. `hostGeo` is accepted for signature stability (the fit
+ * is driven entirely by the stadiums), so callers can keep passing it.
  */
-function geoBounds(
-  fc: FeatureCollection,
-  proj: GeoProjection,
-): [[number, number], [number, number]] {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+export function buildProjection(
+  _hostGeo: FeatureCollection | null,
+  stadiums: StadiumLike[],
+): Projection {
+  const extentFeature = buildStadiumExtentFeature(stadiums);
 
-  const visit = (lon: number, lat: number) => {
+  const proj: GeoProjection = geoConicConformal()
+    .parallels([17.5, 49.5])
+    .rotate([96, 0])
+    .fitExtent(
+      [
+        [0, 0],
+        [FIT_PX, FIT_PX],
+      ],
+      extentFeature,
+    );
+
+  // Realized pixel bbox of the (padded) stadium extent under this projection.
+  // fitExtent guarantees the extent touches the box; we read the true corners so
+  // the scene center is the extent center and the scale maps its width to SCENE_WIDTH.
+  const ring = extentFeature.geometry.coordinates[0];
+  let pMinX = Infinity;
+  let pMaxX = -Infinity;
+  let pMinY = Infinity;
+  let pMaxY = -Infinity;
+  for (const [lon, lat] of ring) {
     const p = proj([lon, lat]);
-    if (!p) return;
-    if (p[0] < minX) minX = p[0];
-    if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minY) minY = p[1];
-    if (p[1] > maxY) maxY = p[1];
-  };
+    if (!p) continue;
+    if (p[0] < pMinX) pMinX = p[0];
+    if (p[0] > pMaxX) pMaxX = p[0];
+    if (p[1] < pMinY) pMinY = p[1];
+    if (p[1] > pMaxY) pMaxY = p[1];
+  }
+  const pxW = pMaxX - pMinX || 1;
+  const pxH = pMaxY - pMinY || 1;
+  const cx = (pMinX + pMaxX) / 2;
+  const cy = (pMinY + pMaxY) / 2;
 
-  for (const f of fc.features) {
-    const g = f.geometry;
-    if (g.type === 'Polygon') {
-      for (const ring of g.coordinates)
-        for (const [lon, lat] of ring) visit(lon, lat);
-    } else if (g.type === 'MultiPolygon') {
-      for (const poly of g.coordinates)
-        for (const ring of poly)
-          for (const [lon, lat] of ring) visit(lon, lat);
-    }
+  // Uniform scale: stadium-extent width → SCENE_WIDTH world units.
+  const scale = SCENE_WIDTH / pxW;
+  const sceneDepth = pxH * scale;
+
+  function projectToScene(lon: number, lat: number): [number, number] {
+    const p = proj([lon, lat]);
+    if (!p) return [0, 0];
+    const x = (p[0] - cx) * scale;
+    const z = (p[1] - cy) * scale; // d3 south = larger y → larger z. No flip.
+    return [x, z];
   }
 
-  return [
-    [minX, minY],
-    [maxX, maxY],
-  ];
+  const halfW = SCENE_WIDTH / 2;
+  const halfD = sceneDepth / 2;
+
+  return {
+    projectToScene,
+    project: projectToScene,
+    stadiumBounds: {
+      minX: -halfW,
+      maxX: halfW,
+      minZ: -halfD,
+      maxZ: halfD,
+      width: SCENE_WIDTH,
+      depth: sceneDepth,
+      centerX: 0,
+      centerZ: 0,
+    },
+    width: SCENE_WIDTH,
+    height: sceneDepth,
+    halfWidth: halfW,
+    halfHeight: halfD,
+  };
 }
