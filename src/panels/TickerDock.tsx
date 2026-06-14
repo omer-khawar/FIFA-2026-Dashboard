@@ -2,7 +2,7 @@
  * TickerDock.tsx — bottom Ticker Dock (blueprint §1.5, defect 2).
  *
  * Horizontal scroll strip, order LIVE → today → upcoming (then recent finished if
- * thin). Auto-scrolls to the first live card on mount. Each card (188px,
+ * thin). Auto-scrolls to the first live card on mount. Each card (212px,
  * snap-align start): chip row (stage/group + city), two team rows (24px flag,
  * code in display face, score for in|post, "–" for pre — DEFECT 2), tri-bar
  * footer when probs exist; live cards get border-live/40 + a pulse-live ring.
@@ -10,17 +10,19 @@
  *
  * PLUS the snap-sheet: a chevron handle expands the dock to a 58vh z-20 overlay
  * (height transition 280ms) listing ALL 104 matches grouped by day with a
- * horizontal date jump-strip. Chevron / Esc collapses. Wired via useHud dockOpen.
+ * 2-column layout: LEFT = scrollable match list, RIGHT = Calendar side panel.
+ * Chevron / Esc collapses. Wired via useHud dockOpen.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorldCup } from '../data/store';
 import { useHud } from './uiStore';
 import { TriBar, Flag } from './bits';
 import { slotView, stageChip, isToday, dayKey } from './hud';
 import { kickoffTime, dateLabel } from '../lib/format';
 import type { Match } from '../lib/types';
+import Calendar from './Calendar';
 
-// ── Ticker card ──────────────────────────────────────────────────────────────
+// ── Collapsed strip card (small) ─────────────────────────────────────────────
 
 function TickerCard({ match }: { match: Match }) {
   const teams = useWorldCup((s) => s.teams);
@@ -29,7 +31,7 @@ function TickerCard({ match }: { match: Match }) {
 
   const isLive = match.state === 'in';
   const isPost = match.state === 'post';
-  const showScore = isLive || isPost; // DEFECT 2 — "–" for pre
+  const showScore = isLive || isPost;
 
   const home = slotView(match.home, teams);
   const away = slotView(match.away, teams);
@@ -47,13 +49,13 @@ function TickerCard({ match }: { match: Match }) {
     win: boolean,
   ) => (
     <div className="flex items-center gap-1.5">
-      <Flag url={v.flagUrl} className="h-4 w-6" />
-      <span className={`min-w-0 flex-1 truncate font-display text-[12px] ${
+      <Flag url={v.flagUrl} className="h-4 w-6 shrink-0" />
+      <span className={`min-w-0 flex-1 truncate font-display text-[13px] ${
         v.isPlaceholder ? 'italic text-dust/70' : win ? 'font-bold text-chalk' : 'text-chalk/85'
       }`}>
         {v.code}
       </span>
-      <span className={`font-display text-[13px] font-bold tabular-nums ${win ? 'text-chalk' : 'text-dust'}`}>
+      <span className={`font-display text-[14px] font-bold tabular-nums shrink-0 ${win ? 'text-chalk' : 'text-dust'}`}>
         {showScore && score !== undefined ? score : '–'}
       </span>
     </div>
@@ -64,29 +66,29 @@ function TickerCard({ match }: { match: Match }) {
       data-live={isLive || undefined}
       onClick={() => setFocusVenue(match.venueId)}
       title={`${match.venueName} · ${match.city}`}
-      className={`flex h-full w-[188px] shrink-0 flex-col gap-1 rounded-lg border bg-white/[0.02] px-2.5 py-2 text-left transition-colors [scroll-snap-align:start] hover:bg-white/[0.05] ${
+      className={`flex h-[100px] w-[212px] shrink-0 flex-col justify-between rounded-lg border bg-white/[0.02] px-2.5 py-2 text-left transition-colors [scroll-snap-align:start] hover:bg-white/[0.05] ${
         isLive
           ? 'border-live/40 animate-[pulse-live_1.6s_ease-in-out_infinite]'
           : 'border-hairline'
       }`}
     >
       {/* chip row */}
-      <div className="flex items-center gap-1.5">
-        <span className="rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-dust">
+      <div className="flex items-center gap-1.5 overflow-hidden">
+        <span className="shrink-0 whitespace-nowrap rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
           {stageChip(match)}
         </span>
-        <span className="min-w-0 truncate text-[9px] uppercase tracking-[0.1em] text-dust/80">
+        <span className="min-w-0 truncate text-[10px] uppercase tracking-[0.1em] text-dust/80">
           {match.city}
         </span>
         {isLive ? (
-          <span className="ml-auto flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.1em] text-live">
+          <span className="ml-auto shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.1em] text-live">
             <span className="live-dot" aria-hidden="true" />
             {match.clock || 'LIVE'}
           </span>
         ) : isPost ? (
-          <span className="ml-auto text-[9px] font-semibold uppercase text-dust">FT</span>
+          <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase text-dust">FT</span>
         ) : (
-          <span className="ml-auto text-[9px] font-semibold uppercase tracking-[0.06em] text-dust">
+          <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-dust">
             {kickoffTime(match.date)}
           </span>
         )}
@@ -100,11 +102,106 @@ function TickerCard({ match }: { match: Match }) {
 
       {/* tri-bar footer */}
       {showProbs ? (
-        <div className="mt-auto pt-0.5">
+        <div className="pt-0.5">
           <TriBar probs={probs} />
         </div>
       ) : (
-        <div className="mt-auto" />
+        <div className="h-1" />
+      )}
+    </button>
+  );
+}
+
+// ── Expanded sheet card (large) ───────────────────────────────────────────────
+
+function SheetCard({ match }: { match: Match }) {
+  const teams = useWorldCup((s) => s.teams);
+  const predictions = useWorldCup((s) => s.predictions);
+  const setFocusVenue = useWorldCup((s) => s.setFocusVenue);
+
+  const isLive = match.state === 'in';
+  const isPost = match.state === 'post';
+  const showScore = isLive || isPost;
+
+  const home = slotView(match.home, teams);
+  const away = slotView(match.away, teams);
+  const homeWin = isPost && match.winnerTeamId !== undefined
+    && match.home.kind === 'team' && match.winnerTeamId === match.home.teamId;
+  const awayWin = isPost && match.winnerTeamId !== undefined
+    && match.away.kind === 'team' && match.winnerTeamId === match.away.teamId;
+
+  const probs = predictions?.matchProbs?.[match.id];
+  const showProbs = probs !== undefined && match.state !== 'post';
+
+  const row = (
+    v: ReturnType<typeof slotView>,
+    score: number | undefined,
+    win: boolean,
+  ) => (
+    <div className="flex items-center gap-2">
+      <Flag url={v.flagUrl} className="h-5 w-7 shrink-0" />
+      <span className={`min-w-0 flex-1 truncate font-display text-[14px] ${
+        v.isPlaceholder ? 'italic text-dust/70' : win ? 'font-bold text-chalk' : 'text-chalk/85'
+      }`}>
+        {v.code}
+      </span>
+      <span className={`font-display text-[15px] font-bold tabular-nums shrink-0 ${win ? 'text-chalk' : 'text-dust'}`}>
+        {showScore && score !== undefined ? score : '–'}
+      </span>
+    </div>
+  );
+
+  return (
+    <button
+      data-live={isLive || undefined}
+      onClick={() => setFocusVenue(match.venueId)}
+      title={`${match.venueName} · ${match.city}`}
+      className={`flex w-full flex-col justify-between rounded-lg border bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] ${
+        isLive
+          ? 'border-live/40 animate-[pulse-live_1.6s_ease-in-out_infinite]'
+          : 'border-hairline'
+      }`}
+    >
+      {/* chip row */}
+      <div className="mb-2 flex items-center gap-1.5 overflow-hidden">
+        <span className="shrink-0 whitespace-nowrap rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
+          {stageChip(match)}
+        </span>
+        <span className="min-w-0 truncate text-[10px] uppercase tracking-[0.1em] text-dust/80">
+          {match.city}
+        </span>
+        {isLive ? (
+          <span className="ml-auto shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.1em] text-live">
+            <span className="live-dot" aria-hidden="true" />
+            {match.clock || 'LIVE'}
+          </span>
+        ) : isPost ? (
+          <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase text-dust">FT</span>
+        ) : (
+          <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-dust">
+            {kickoffTime(match.date)}
+          </span>
+        )}
+      </div>
+
+      {/* two team rows */}
+      <div className="flex flex-col gap-1">
+        {row(home, match.homeScore, homeWin)}
+        {row(away, match.awayScore, awayWin)}
+      </div>
+
+      {/* tri-bar + win% numbers */}
+      {showProbs && probs ? (
+        <div className="mt-2.5">
+          <TriBar probs={probs} />
+          <div className="mt-1 flex justify-between text-[10px] tabular-nums">
+            <span className="text-neon">{Math.round(probs.pHome * 100)}%</span>
+            <span className="text-chalk/60">{Math.round(probs.pDraw * 100)}%</span>
+            <span className="text-ember">{Math.round(probs.pAway * 100)}%</span>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2.5 h-1" />
       )}
     </button>
   );
@@ -139,11 +236,12 @@ function useTickerOrder(): Match[] {
   }, [matches]);
 }
 
-// ── Snap-sheet (all 104, grouped by day) ──────────────────────────────────────
+// ── Snap-sheet (all 104, grouped by day) — 2-column layout ──────────────────
 
 function FullSchedule() {
   const matches = useWorldCup((s) => s.matches);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const days = useMemo(() => {
     const sorted = [...matches].sort((a, b) => a.date.localeCompare(b.date));
@@ -158,40 +256,35 @@ function FullSchedule() {
   }, [matches]);
 
   const jump = (key: string) => {
+    setSelectedKey(key);
     document.getElementById(`day-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* date jump-strip */}
-      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline px-3 py-2 [scrollbar-width:none]">
-        {days.map((d) => (
-          <button
-            key={d.key}
-            onClick={() => jump(d.key)}
-            className="shrink-0 rounded-[4px] border border-hairline px-2 py-1 font-display text-[10px] font-semibold uppercase tracking-[0.1em] text-dust transition-colors hover:border-neon/40 hover:text-neon"
-          >
-            {d.label}
-          </button>
-        ))}
-      </div>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* LEFT — day-grouped match listings */}
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2"
+      >
         {days.map((d) => (
           <div key={d.key} id={`day-${d.key}`} className="mb-4 scroll-mt-2">
             <div className="sticky top-0 z-10 mb-2 bg-glass/80 py-1 font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-chalk/80 backdrop-blur-sm">
               {d.label}
               <span className="ml-2 text-[10px] tabular-nums text-dust">{d.matches.length}</span>
             </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(188px,1fr))] gap-2">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
               {d.matches.map((m) => (
-                <div key={m.id} className="h-[88px]">
-                  <TickerCard match={m} />
-                </div>
+                <SheetCard key={m.id} match={m} />
               ))}
             </div>
           </div>
         ))}
+      </div>
+
+      {/* RIGHT — Calendar side panel */}
+      <div className="w-[340px] shrink-0 overflow-y-auto overscroll-contain border-l border-hairline py-2">
+        <Calendar matches={matches} selectedKey={selectedKey} onSelect={jump} />
       </div>
     </div>
   );
@@ -242,10 +335,12 @@ export default function TickerDock() {
         />
       )}
 
-      {/* The dock surface — animates height into a 58vh sheet when open */}
+      {/* The dock surface — centered floating pill when collapsed, wide sheet when expanded */}
       <div
-        className={`absolute bottom-3 left-3 right-3 z-20 flex flex-col overflow-hidden rounded-2xl border border-hairline bg-glass backdrop-blur-xl shadow-[0_8px_40px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.04)] transition-[height] duration-[280ms] ease-[var(--ease-hud)] ${
-          dockOpen ? 'h-[58vh]' : 'h-[94px]'
+        className={`absolute bottom-3 z-20 flex flex-col overflow-hidden rounded-2xl border border-hairline bg-glass backdrop-blur-xl shadow-[0_8px_40px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.04)] transition-[height] duration-[280ms] ease-[var(--ease-hud)] ${
+          dockOpen
+            ? 'left-[68px] right-3 h-[58vh]'
+            : 'left-1/2 -translate-x-1/2 w-[min(880px,calc(100%-100px))] h-[116px]'
         }`}
       >
         {/* Handle / header */}

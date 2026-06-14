@@ -1,7 +1,8 @@
 /**
  * TopBar.tsx — HUD top bar (blueprint §1.6, defect 6).
  *
- * 52px, no card chrome — floats on the stage gradient. Left: WC26 display lockup.
+ * 52px, no card chrome — floats on the stage gradient. Left: "World Cup 2026"
+ * page title (cleared past the 56px floating icon rail via pl-[60px]).
  * Right-aligned controls: stage progress (n/104 completed, a LEGIBLE 2px neon bar
  * on a hairline track), "Updated HH:MM", and an icon-only Refresh button whose
  * glyph spins while refresh() is in flight (no layout shift). Export name frozen.
@@ -32,25 +33,25 @@ export default function TopBar() {
   };
 
   return (
-    <header className="relative z-40 flex h-[52px] w-full items-center gap-4 px-4">
-      {/* Lockup */}
-      <div className="flex min-w-0 items-baseline gap-2 font-display">
-        <span className="text-[20px] font-bold leading-none tracking-[0.04em] text-chalk">
-          WC<span className="text-neon">26</span>
+    <header className="relative z-40 flex h-[52px] w-full items-center gap-4 pl-[60px] pr-4">
+      {/* Page title — clears the 56px floating icon rail via pl-[60px] */}
+      <h1 className="flex min-w-0 items-baseline gap-2.5">
+        <span className="font-display text-[22px] font-bold leading-none tracking-[0.02em] text-chalk">
+          World Cup <span className="text-neon">2026</span>
         </span>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.28em] text-dust sm:inline">
+        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-dust sm:inline">
           Live Tracker
         </span>
-      </div>
+      </h1>
 
       <div className="flex-1" />
 
       {/* Right-aligned controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5">
         {/* Stage progress — n/104 + 2px neon bar on hairline track */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <div className="flex items-baseline gap-1 font-display tabular-nums leading-none">
-            <span className="text-[14px] font-bold text-chalk">{played}</span>
+            <span className="text-[15px] font-bold text-chalk">{played}</span>
             <span className="text-[11px] text-dust">/ 104</span>
           </div>
           <div
@@ -70,7 +71,7 @@ export default function TopBar() {
 
         {/* Last updated */}
         {lastUpdated && (
-          <div className="hidden whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.16em] text-dust lg:block">
+          <div className="hidden whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-dust lg:block">
             Updated {kickoffTime(lastUpdated)}
           </div>
         )}

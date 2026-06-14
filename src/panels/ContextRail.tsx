@@ -1,14 +1,19 @@
 /**
  * ContextRail.tsx — Right Rail "CONTEXT" (blueprint §1.4, defect 7).
  *
- * A single stateful panel driven by store.focusVenueId + useHud.focusTeamId
- * (venue focus wins if both; ✕ clears via setFocusVenue(null)/setFocusTeam(null)):
- *   Default "NOW & NEXT" — live matches w/ tri-bars, next 3 kickoffs, 3 headlines.
- *   Venue focus       — stadium identity block, that venue's matches, contextual news.
- *   Team focus        — team header (flag, name, Elo, pChampion), remaining fixtures,
- *                       contextual news.
- * Contextual news scoring is §1.4 exactly (see hud.ts). The old bottom news band
- * is gone. Export name frozen: default `ContextRail`.
+ * Three always-rendered, clearly-labeled stacked sections (each led by
+ * <SectionHeading>), whose content adapts to the current focus
+ * (store.focusVenueId wins, then useHud.focusTeamId, else a quiet default):
+ *
+ *   VENUE        — the focused stadium's identity (name / city / capacity), or a
+ *                  quiet default (next upcoming match's venue + a hint).
+ *   LIVE MATCHES — live matches first (live dot in the heading when any are live),
+ *                  then the next upcoming, as equal-height MatchLine cards.
+ *   RELATED NEWS — prominent image-led NewsRow cards, scored to the focus context
+ *                  via contextualNews (scoring lives in hud.ts — frozen).
+ *
+ * The RailShell wrapper, auto-recede opacity, and data-active corner brackets are
+ * preserved. Export name frozen: default `ContextRail`.
  */
 import { useMemo } from 'react';
 import { useWorldCup } from '../data/store';
@@ -16,11 +21,11 @@ import { useHud } from './uiStore';
 import { FLOATING_PANEL } from './DataDeck';
 import RailShell, { type RailIcon } from './RailShell';
 import NewsRow from './NewsRow';
-import { TriBar, Flag, SectionLabel } from './bits';
+import { TriBar, Flag, SectionHeading, StatTag } from './bits';
 import { contextualNews, slotView, stageChip, formatPct } from './hud';
 import type { NewsContext } from './hud';
-import type { Match } from '../lib/types';
-import { kickoffTime, dateLabel } from '../lib/format';
+import type { Match, NewsItem, Stadium, Team } from '../lib/types';
+import { kickoffTime } from '../lib/format';
 
 // ── Shared match line ───────────────────────────────────────────────────────────
 
@@ -48,7 +53,7 @@ function MatchLine({ match }: { match: Match }) {
     score: number | undefined,
     win: boolean,
   ) => (
-    <div className="flex items-center gap-2">
+    <div className="flex h-7 items-center gap-2">
       <Flag url={v.flagUrl} className="h-[12px] w-[18px]" />
       <span className={`min-w-0 flex-1 truncate font-display text-[12px] ${
         v.isPlaceholder ? 'italic text-dust/70' : win ? 'font-bold text-chalk' : 'text-chalk/85'
@@ -64,11 +69,11 @@ function MatchLine({ match }: { match: Match }) {
   return (
     <button
       onClick={() => setFocusVenue(match.venueId)}
-      className={`flex w-full flex-col gap-1 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.04] ${
+      className={`flex w-full flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-white/[0.04] ${
         isLive ? 'border-live/40 bg-live/[0.05]' : 'border-hairline'
       }`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex h-5 items-center gap-2">
         <span className="rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-dust">
           {stageChip(match)}
         </span>
@@ -92,225 +97,56 @@ function MatchLine({ match }: { match: Match }) {
   );
 }
 
-// ── State: NOW & NEXT (default) ──────────────────────────────────────────────────
+// ── Section: VENUE ───────────────────────────────────────────────────────────────
 
-function NowAndNext() {
-  const matches = useWorldCup((s) => s.matches);
-  const news = useWorldCup((s) => s.news);
-
-  const { live, next3 } = useMemo(() => {
-    const live = matches.filter((m) => m.state === 'in');
-    const next3 = matches
-      .filter((m) => m.state === 'pre')
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(0, 3);
-    return { live, next3 };
-  }, [matches]);
-
-  const headlines = news.slice(0, 3);
-
+/** Stadium identity block: name (~16px sub-title) → city → capacity. */
+function StadiumIdentity({ stadium }: { stadium: Stadium }) {
   return (
-    <div className="flex flex-col gap-1 p-2">
-      {live.length > 0 && (
-        <>
-          <SectionLabel>Live Now</SectionLabel>
-          <div className="flex flex-col gap-1.5">
-            {live.map((m) => <MatchLine key={m.id} match={m} />)}
-          </div>
-        </>
-      )}
-
-      <SectionLabel>Next Up</SectionLabel>
-      <div className="flex flex-col gap-1.5">
-        {next3.length > 0 ? (
-          next3.map((m) => <MatchLine key={m.id} match={m} />)
-        ) : (
-          <div className="px-1 text-[11px] text-dust">No upcoming fixtures.</div>
-        )}
+    <div className="rounded-lg border border-hairline bg-white/[0.02] p-3">
+      <div className="font-display text-[9px] font-semibold uppercase tracking-[0.18em] text-neon">
+        {stadium.country} · Host Venue
       </div>
-
-      <SectionLabel>Headlines</SectionLabel>
-      <NewsRow items={headlines} />
+      <div className="mt-1 font-display text-[16px] font-bold leading-tight text-chalk">
+        {stadium.name}
+      </div>
+      <div className="mt-0.5 text-[12px] text-dust">
+        {stadium.city} · <span className="tabular-nums">{stadium.capacity.toLocaleString()}</span> cap
+      </div>
     </div>
   );
 }
 
-// ── State: Venue focus ───────────────────────────────────────────────────────────
-
-function VenueFocus({ venueId }: { venueId: string }) {
-  const stadiums = useWorldCup((s) => s.stadiums);
-  const matches = useWorldCup((s) => s.matches);
-  const teams = useWorldCup((s) => s.teams);
-  const news = useWorldCup((s) => s.news);
-  const setFocusVenue = useWorldCup((s) => s.setFocusVenue);
-
-  const stadium = stadiums.find((s) => s.venueId === venueId);
-
-  const venueMatches = useMemo(
-    () =>
-      matches
-        .filter((m) => m.venueId === venueId)
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    [matches, venueId],
-  );
-
-  const relevantNews = useMemo(() => {
-    if (!stadium) return news.slice(0, 4);
-    // Relevant team names = all teams playing at this venue.
-    const teamNames = new Set<string>();
-    for (const m of venueMatches) {
-      if (m.home.kind === 'team') teamNames.add(teams[m.home.teamId]?.name ?? '');
-      if (m.away.kind === 'team') teamNames.add(teams[m.away.teamId]?.name ?? '');
-    }
-    const ctx: NewsContext = {
-      teamNames: [...teamNames].filter(Boolean),
-      placeNames: [stadium.city, stadium.name].filter(Boolean),
-    };
-    return contextualNews(news, ctx);
-  }, [news, stadium, venueMatches, teams]);
-
-  if (!stadium) {
-    return (
-      <div className="p-3 text-[11px] text-dust">Venue not found.</div>
-    );
-  }
-
+/** Team identity block (shown in the VENUE slot when a team — not a venue — is focused). */
+function TeamIdentity({ team, elo, pChampion }: {
+  team: Team;
+  elo?: number;
+  pChampion?: number;
+}) {
   return (
-    <div className="flex flex-col gap-1 p-2">
-      {/* Stadium identity block */}
-      <div className="rounded-lg border border-hairline bg-white/[0.02] p-3">
-        <div className="font-display text-[9px] font-semibold uppercase tracking-[0.18em] text-neon">
-          {stadium.country} · Host Venue
+    <div className="flex items-center gap-3 rounded-lg border border-hairline bg-white/[0.02] p-3">
+      <Flag url={team.flagUrl} className="h-[26px] w-[38px]" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-display text-[16px] font-bold leading-tight text-chalk">
+          {team.name}
         </div>
-        <div className="mt-1 font-display text-[16px] font-bold leading-tight text-chalk">
-          {stadium.name}
-        </div>
-        <div className="mt-0.5 text-[12px] text-dust">
-          {stadium.city} · <span className="tabular-nums">{stadium.capacity.toLocaleString()}</span> cap
+        <div className="mt-0.5 flex items-center gap-3 text-[11px] text-dust">
+          {elo !== undefined && (
+            <span>
+              Elo <span className="font-display font-bold tabular-nums text-chalk/90">{Math.round(elo)}</span>
+            </span>
+          )}
+          {pChampion !== undefined && (
+            <span>
+              Champ <span className="font-display font-bold tabular-nums text-gold">{formatPct(pChampion)}</span>
+            </span>
+          )}
         </div>
       </div>
-
-      <SectionLabel>
-        {venueMatches.length} {venueMatches.length === 1 ? 'Match' : 'Matches'}
-      </SectionLabel>
-      <div className="flex flex-col gap-1.5">
-        {venueMatches.length > 0 ? (
-          venueMatches.map((m) => <MatchLine key={m.id} match={m} />)
-        ) : (
-          <div className="px-1 text-[11px] text-dust">No matches scheduled yet.</div>
-        )}
-      </div>
-
-      <SectionLabel>Related News</SectionLabel>
-      <NewsRow items={relevantNews} />
-
-      <ClearFooter onClear={() => setFocusVenue(null)} label="venue" />
     </div>
   );
 }
 
-// ── State: Team focus ────────────────────────────────────────────────────────────
-
-function TeamFocus({ teamId }: { teamId: string }) {
-  const team = useWorldCup((s) => s.teams[teamId]);
-  const matches = useWorldCup((s) => s.matches);
-  const predictions = useWorldCup((s) => s.predictions);
-  const news = useWorldCup((s) => s.news);
-  const setFocusTeam = useHud((s) => s.setFocusTeam);
-
-  const remaining = useMemo(
-    () =>
-      matches
-        .filter(
-          (m) =>
-            m.state !== 'post' &&
-            ((m.home.kind === 'team' && m.home.teamId === teamId) ||
-              (m.away.kind === 'team' && m.away.teamId === teamId)),
-        )
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    [matches, teamId],
-  );
-
-  const relevantNews = useMemo(() => {
-    if (!team) return news.slice(0, 4);
-    const ctx: NewsContext = { teamNames: [team.name], placeNames: [] };
-    return contextualNews(news, ctx);
-  }, [news, team]);
-
-  if (!team) {
-    return <div className="p-3 text-[11px] text-dust">Team not found.</div>;
-  }
-
-  const elo = predictions?.elo?.[teamId];
-  const pChampion = predictions?.outlooks?.[teamId]?.pChampion;
-
-  return (
-    <div className="flex flex-col gap-1 p-2">
-      {/* Team header */}
-      <div className="flex items-center gap-3 rounded-lg border border-hairline bg-white/[0.02] p-3">
-        <Flag url={team.flagUrl} className="h-[26px] w-[38px]" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[16px] font-bold leading-tight text-chalk">
-            {team.name}
-          </div>
-          <div className="mt-0.5 flex items-center gap-3 text-[11px] text-dust">
-            {elo !== undefined && (
-              <span>
-                Elo <span className="font-display font-bold tabular-nums text-chalk/90">{Math.round(elo)}</span>
-              </span>
-            )}
-            {pChampion !== undefined && (
-              <span>
-                Champ <span className="font-display font-bold tabular-nums text-gold">{formatPct(pChampion)}</span>
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <SectionLabel>Remaining Fixtures</SectionLabel>
-      <div className="flex flex-col gap-1.5">
-        {remaining.length > 0 ? (
-          remaining.slice(0, 6).map((m) => <FixtureLine key={m.id} match={m} teamId={teamId} />)
-        ) : (
-          <div className="px-1 text-[11px] text-dust">No remaining fixtures.</div>
-        )}
-      </div>
-
-      <SectionLabel>Related News</SectionLabel>
-      <NewsRow items={relevantNews} />
-
-      <ClearFooter onClear={() => setFocusTeam(null)} label="team" />
-    </div>
-  );
-}
-
-/** Compact fixture row for the team view (opponent + date + venue). */
-function FixtureLine({ match, teamId }: { match: Match; teamId: string }) {
-  const teams = useWorldCup((s) => s.teams);
-  const setFocusVenue = useWorldCup((s) => s.setFocusVenue);
-
-  const isHome = match.home.kind === 'team' && match.home.teamId === teamId;
-  const oppSlot = isHome ? match.away : match.home;
-  const opp = slotView(oppSlot, teams);
-
-  return (
-    <button
-      onClick={() => setFocusVenue(match.venueId)}
-      className="flex w-full items-center gap-2 rounded-lg border border-hairline px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.04]"
-    >
-      <span className="rounded-[3px] bg-white/[0.06] px-1.5 py-0.5 font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-dust">
-        {stageChip(match)}
-      </span>
-      <span className="text-[10px] text-dust">{isHome ? 'vs' : '@'}</span>
-      <Flag url={opp.flagUrl} className="h-[11px] w-[16px]" />
-      <span className={`min-w-0 flex-1 truncate font-display text-[12px] ${opp.isPlaceholder ? 'italic text-dust/70' : 'text-chalk/85'}`}>
-        {opp.code}
-      </span>
-      <span className="text-[10px] tabular-nums text-dust">{dateLabel(match.date)}</span>
-    </button>
-  );
-}
+// ── Footer ───────────────────────────────────────────────────────────────────────
 
 function ClearFooter({ onClear, label }: { onClear: () => void; label: string }) {
   return (
@@ -324,6 +160,161 @@ function ClearFooter({ onClear, label }: { onClear: () => void; label: string })
       Clear {label}
     </button>
   );
+}
+
+// ── Resolved context (the single adaptive body) ──────────────────────────────────
+
+interface RailContext {
+  /** What to render in the VENUE section. */
+  venue: React.ReactNode;
+  /** Match cards for LIVE MATCHES (live first, then next upcoming). */
+  matches: Match[];
+  /** Whether any of those matches is live (drives the heading live dot). */
+  anyLive: boolean;
+  /** Pre-scored news for RELATED NEWS. */
+  news: NewsItem[];
+  /** Optional clear-focus footer. */
+  footer?: React.ReactNode;
+}
+
+/** Live matches first, then the single next upcoming kickoff. */
+function liveThenNext(matches: Match[]): { list: Match[]; anyLive: boolean } {
+  const live = matches.filter((m) => m.state === 'in');
+  const next = matches
+    .filter((m) => m.state === 'pre')
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, live.length > 0 ? 1 : 3);
+  return { list: [...live, ...next], anyLive: live.length > 0 };
+}
+
+function useRailContext(
+  focusVenueId: string | null,
+  focusTeamId: string | null,
+): RailContext {
+  const stadiums = useWorldCup((s) => s.stadiums);
+  const matches = useWorldCup((s) => s.matches);
+  const teams = useWorldCup((s) => s.teams);
+  const news = useWorldCup((s) => s.news);
+  const predictions = useWorldCup((s) => s.predictions);
+  const setFocusVenue = useWorldCup((s) => s.setFocusVenue);
+  const setFocusTeam = useHud((s) => s.setFocusTeam);
+
+  return useMemo<RailContext>(() => {
+    // ── Venue focus wins ──────────────────────────────────────────────────────
+    if (focusVenueId) {
+      const stadium = stadiums.find((s) => s.venueId === focusVenueId);
+      const venueMatches = matches
+        .filter((m) => m.venueId === focusVenueId)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const { list, anyLive } = liveThenNext(venueMatches);
+
+      let scoredNews: NewsItem[];
+      if (!stadium) {
+        scoredNews = news.slice(0, 4);
+      } else {
+        const teamNames = new Set<string>();
+        for (const m of venueMatches) {
+          if (m.home.kind === 'team') teamNames.add(teams[m.home.teamId]?.name ?? '');
+          if (m.away.kind === 'team') teamNames.add(teams[m.away.teamId]?.name ?? '');
+        }
+        const ctx: NewsContext = {
+          teamNames: [...teamNames].filter(Boolean),
+          placeNames: [stadium.city, stadium.name].filter(Boolean),
+        };
+        scoredNews = contextualNews(news, ctx);
+      }
+
+      return {
+        venue: stadium ? (
+          <StadiumIdentity stadium={stadium} />
+        ) : (
+          <div className="rounded-lg border border-hairline bg-white/[0.02] p-3 text-[12px] text-dust">
+            Venue not found.
+          </div>
+        ),
+        // Venue matches can be a wider window than live+next; show all of them.
+        matches: list.length > 0 ? list : venueMatches,
+        anyLive,
+        news: scoredNews,
+        footer: <ClearFooter onClear={() => setFocusVenue(null)} label="venue" />,
+      };
+    }
+
+    // ── Team focus (no venue) ─────────────────────────────────────────────────
+    if (focusTeamId) {
+      const team = teams[focusTeamId];
+      const teamMatches = matches
+        .filter(
+          (m) =>
+            (m.home.kind === 'team' && m.home.teamId === focusTeamId) ||
+            (m.away.kind === 'team' && m.away.teamId === focusTeamId),
+        )
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const { list, anyLive } = liveThenNext(teamMatches);
+      // Fall back to upcoming/remaining fixtures if nothing live or pending soon.
+      const upcoming = teamMatches.filter((m) => m.state !== 'post');
+
+      const scoredNews = team
+        ? contextualNews(news, { teamNames: [team.name], placeNames: [] })
+        : news.slice(0, 4);
+
+      return {
+        venue: team ? (
+          <TeamIdentity
+            team={team}
+            elo={predictions?.elo?.[focusTeamId]}
+            pChampion={predictions?.outlooks?.[focusTeamId]?.pChampion}
+          />
+        ) : (
+          <div className="rounded-lg border border-hairline bg-white/[0.02] p-3 text-[12px] text-dust">
+            Team not found.
+          </div>
+        ),
+        matches: list.length > 0 ? list : upcoming.slice(0, 3),
+        anyLive,
+        news: scoredNews,
+        footer: <ClearFooter onClear={() => setFocusTeam(null)} label="team" />,
+      };
+    }
+
+    // ── Quiet default (nothing focused) ───────────────────────────────────────
+    const { list, anyLive } = liveThenNext(matches);
+    // Surface the next upcoming match's venue as a gentle default identity.
+    const nextUpcoming = matches
+      .filter((m) => m.state === 'pre')
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    const defaultStadium = nextUpcoming
+      ? stadiums.find((s) => s.venueId === nextUpcoming.venueId)
+      : undefined;
+
+    return {
+      venue: defaultStadium ? (
+        <div className="flex flex-col gap-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
+            Select a venue on the map
+          </div>
+          <StadiumIdentity stadium={defaultStadium} />
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-hairline bg-white/[0.02] p-4 text-center text-[12px] text-dust">
+          Select a venue on the map to see its details.
+        </div>
+      ),
+      matches: list,
+      anyLive,
+      news: news.slice(0, 4),
+    };
+  }, [
+    focusVenueId,
+    focusTeamId,
+    stadiums,
+    matches,
+    teams,
+    news,
+    predictions,
+    setFocusVenue,
+    setFocusTeam,
+  ]);
 }
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
@@ -345,19 +336,16 @@ function ContextPanel() {
   const focusVenueId = useWorldCup((s) => s.focusVenueId);
   const focusTeamId = useHud((s) => s.focusTeamId);
 
-  // Venue focus wins if both are set.
-  const mode: 'venue' | 'team' | 'now' = focusVenueId
-    ? 'venue'
-    : focusTeamId
-      ? 'team'
-      : 'now';
+  const ctx = useRailContext(focusVenueId, focusTeamId);
 
-  const heading = mode === 'venue' ? 'VENUE' : mode === 'team' ? 'TEAM' : 'NOW & NEXT';
+  // Venue focus wins if both are set.
+  const heading = focusVenueId ? 'VENUE' : focusTeamId ? 'TEAM' : 'NOW & NEXT';
 
   // Auto-recede: when nothing is focused the rail dims so the map leads; a focus
   // (venue/team) makes its content the active context, so it asserts fully. Hover
   // / keyboard focus always assert.
-  const asserted = mode !== 'now';
+  const asserted = Boolean(focusVenueId || focusTeamId);
+  const swapKey = focusVenueId ?? focusTeamId ?? 'now';
 
   return (
     <section
@@ -369,10 +357,38 @@ function ContextPanel() {
         {heading}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div key={mode + (focusVenueId ?? focusTeamId ?? '')} className="hud-swap">
-          {mode === 'venue' && <VenueFocus venueId={focusVenueId!} />}
-          {mode === 'team' && <TeamFocus teamId={focusTeamId!} />}
-          {mode === 'now' && <NowAndNext />}
+        <div key={swapKey} className="hud-swap flex flex-col gap-5 p-3.5">
+          {/* VENUE */}
+          <section>
+            <SectionHeading>Venue</SectionHeading>
+            {ctx.venue}
+          </section>
+
+          {/* LIVE MATCHES */}
+          <section>
+            <SectionHeading
+              action={ctx.anyLive ? <StatTag tone="live">Live</StatTag> : undefined}
+            >
+              Live Matches
+            </SectionHeading>
+            <div className="flex flex-col gap-2">
+              {ctx.matches.length > 0 ? (
+                ctx.matches.map((m) => <MatchLine key={m.id} match={m} />)
+              ) : (
+                <div className="rounded-lg border border-hairline bg-white/[0.02] px-3 py-4 text-center text-[11px] text-dust">
+                  No live or upcoming matches.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* RELATED NEWS — prominent, image-led */}
+          <section>
+            <SectionHeading>Related News</SectionHeading>
+            <NewsRow items={ctx.news} />
+          </section>
+
+          {ctx.footer}
         </div>
       </div>
     </section>

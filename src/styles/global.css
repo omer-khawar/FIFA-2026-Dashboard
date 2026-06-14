@@ -42,11 +42,16 @@
   color-scheme: dark;
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* ── Reset ────────────────────────────────────────────────────────────────────
+   MUST live in @layer base: an UNLAYERED `*{margin:0;padding:0}` outranks Tailwind
+   v4's layered utilities, silently zeroing every p-*/m-* utility app-wide. Putting
+   the reset in `base` lets the `utilities` layer override it as intended. */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 /* No page scrollbar may ever exist (blueprint §1.1). The shell owns the viewport;

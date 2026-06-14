@@ -3,8 +3,9 @@
  *
  * No more `.card` chrome: the map is the stage behind the floating HUD rails.
  * MapPanel is just `h-full w-full relative` and holds the r3f <Scene> over a
- * radial backdrop plus a minimal legend (bottom-left glass pill of LIVE / TODAY /
- * VENUE micro-label chips in the three state colors). City details now live in
+ * radial backdrop plus a minimal legend (a centered glass pill of LIVE / TODAY /
+ * VENUE micro-label chips in the three state colors, floated above the ticker in
+ * the open band between the rails). City details now live in
  * the Context Rail (a parallel agent), driven by store.focusVenueId which the
  * beacons set on click — CityPopover is deleted. Hover labels stay in-canvas.
  *
@@ -23,7 +24,7 @@ const LEGEND: Array<{ label: string; color: string }> = [
 
 function Legend() {
   return (
-    <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex items-center gap-3 rounded-full border border-hairline bg-glass px-3.5 py-1.5 backdrop-blur-xl">
+    <div className="pointer-events-none absolute bottom-[128px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-hairline bg-glass px-3.5 py-1.5 backdrop-blur-xl">
       {LEGEND.map(({ label, color }) => (
         <span
           key={label}

@@ -1,14 +1,15 @@
 /**
- * BracketSpine.tsx — BRACKET view of the Data Deck (blueprint §1.3 / §3.5).
+ * BracketSpine.tsx — BRACKET section of the stacked Data Deck (compact teaser).
  *
- * In-rail vertical "knockout spine": rounds R32→Final as collapsible sections
- * (R32 collapsed by default, later rounds open). Each match is one line —
- * flags+codes+score for decided ties, dim italic shortened placeholder chips
- * otherwise; live nodes glow. A "⤢ FULL BRACKET" button opens the Theater tree.
+ * A small (~140px) knockout spine that shows only the current/next round: the
+ * round that currently has a live match, else the earliest round that still has
+ * an undecided tie, else the latest available round. Each match is one node —
+ * flags + codes + score for decided ties, dim italic placeholder chips
+ * otherwise; live nodes glow. The "Full bracket" action (in the SectionHeading)
+ * opens the Theater tree.
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useWorldCup } from '../../data/store';
-import { useHud } from '../uiStore';
 import type { Match, Stage } from '../../lib/types';
 import { slotView, stageName } from '../hud';
 
@@ -33,7 +34,7 @@ function SpineNode({ match }: { match: Match }) {
     score: number | undefined,
     win: boolean,
   ) => (
-    <div className="flex items-center gap-1.5">
+    <div className="flex h-[15px] items-center gap-1.5">
       {/* neon winner tick */}
       <span
         className={`h-2.5 w-[2px] shrink-0 rounded-full ${win ? 'bg-neon' : 'bg-transparent'}`}
@@ -78,105 +79,63 @@ function SpineNode({ match }: { match: Match }) {
   );
 }
 
-function RoundSection({
-  stage,
-  matches,
-  defaultOpen,
-}: {
-  stage: Stage;
-  matches: Match[];
-  defaultOpen: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const liveCount = matches.filter((m) => m.state === 'in').length;
-
-  return (
-    <div className="flex flex-col">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex items-center gap-2 py-1.5 text-left"
-      >
-        <span
-          className={`text-dust transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
-          aria-hidden="true"
-        >
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-            <path d="M2 1l4 3-4 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-        <span className="font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-chalk/80">
-          {stageName(stage)}
-        </span>
-        <span className="text-[9px] tabular-nums text-dust">{matches.length}</span>
-        {liveCount > 0 && (
-          <span className="ml-auto rounded-[3px] bg-live/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-live">
-            {liveCount} live
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="flex flex-col gap-1 pb-2 pl-3">
-          {matches.map((m) => (
-            <SpineNode key={m.id} match={m} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function BracketSpine() {
-  const setTheater = useHud((s) => s.setTheater);
   const matches = useWorldCup((s) => s.matches);
 
-  // Derive rounds in a memo (selectBracketRounds returns a fresh array each call,
-  // which would break zustand's snapshot caching if used as a hook selector).
-  const rounds = useMemo(() => {
+  // Pick the single "current/next" round to tease.
+  const round = useMemo<{ stage: Stage; matches: Match[] } | null>(() => {
     const byStage = new Map<Stage, Match[]>();
     for (const m of matches) {
       const arr = byStage.get(m.stage);
       if (arr) arr.push(m);
       else byStage.set(m.stage, [m]);
     }
-    const result: Array<{ stage: Stage; matches: Match[] }> = [];
-    for (const stage of BRACKET_STAGE_ORDER) {
-      const ms = byStage.get(stage);
-      if (ms && ms.length > 0) {
-        result.push({ stage, matches: [...ms].sort((a, b) => a.ordinal - b.ordinal) });
-      }
-    }
-    return result;
+    const rounds = BRACKET_STAGE_ORDER
+      .map((stage) => byStage.get(stage))
+      .filter((ms): ms is Match[] => !!ms && ms.length > 0)
+      .map((ms) => [...ms].sort((a, b) => a.ordinal - b.ordinal));
+
+    if (rounds.length === 0) return null;
+
+    // 1) Any round with a live match wins.
+    const live = rounds.find((ms) => ms.some((m) => m.state === 'in'));
+    if (live) return { stage: live[0].stage, matches: live };
+
+    // 2) Earliest round that still has an undecided tie (the "next" round).
+    const next = rounds.find((ms) => ms.some((m) => m.state !== 'post'));
+    if (next) return { stage: next[0].stage, matches: next };
+
+    // 3) Everything decided — show the latest available round.
+    const last = rounds[rounds.length - 1];
+    return { stage: last[0].stage, matches: last };
   }, [matches]);
 
+  if (!round) {
+    return <div className="px-1 py-2 text-[12px] text-dust">Bracket loading…</div>;
+  }
+
+  const liveCount = round.matches.filter((m) => m.state === 'in').length;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Full-bracket trigger */}
-      <div className="shrink-0 px-2 pt-2">
-        <button
-          onClick={() => setTheater('bracket')}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-hairline py-1.5 font-display text-[10px] font-semibold uppercase tracking-[0.18em] text-dust transition-colors hover:border-neon/40 hover:text-neon"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M7 1h4v4M11 1L7 5M5 11H1V7M1 11l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Full Bracket
-        </button>
+    <div className="flex flex-col">
+      {/* Round caption */}
+      <div className="mb-1.5 flex items-center gap-2 px-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
+          {stageName(round.stage)}
+        </span>
+        <span className="text-[10px] tabular-nums text-dust/70">{round.matches.length}</span>
+        {liveCount > 0 && (
+          <span className="ml-auto rounded-[3px] bg-live/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-live">
+            {liveCount} live
+          </span>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1">
-        {rounds.length === 0 ? (
-          <div className="p-2 text-[11px] text-dust">Bracket loading…</div>
-        ) : (
-          rounds.map((r) => (
-            <RoundSection
-              key={r.stage}
-              stage={r.stage}
-              matches={r.matches}
-              defaultOpen={r.stage !== 'r32'}
-            />
-          ))
-        )}
+      {/* Compact spine — cap height, scroll internally if the round is large. */}
+      <div className="flex max-h-[140px] flex-col gap-1 overflow-y-auto overscroll-contain pr-0.5">
+        {round.matches.map((m) => (
+          <SpineNode key={m.id} match={m} />
+        ))}
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ import { usePredictions } from './engine/usePredictions';
 
 // HUD shell layers (Phase-1 stubs wrapping existing components).
 import TopBar from './panels/TopBar';
+import IconRail from './panels/IconRail';
 import DataDeck from './panels/DataDeck';
 import ContextRail from './panels/ContextRail';
 import TickerDock from './panels/TickerDock';
@@ -57,7 +58,7 @@ export default function App() {
         {/* Left Rail — DATA DECK. Slim idle width frees map; hover / keyboard
             focus expands it as an overlay (camera is framed for the idle width,
             so expansion never reframes the map). */}
-        <div className="absolute left-3 top-3 bottom-3 z-10 w-[336px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[420px] focus-within:w-[420px]">
+        <div className="absolute left-[68px] top-3 bottom-3 z-10 w-[280px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[360px] focus-within:w-[360px]">
           <DataDeck />
         </div>
 
@@ -66,6 +67,12 @@ export default function App() {
         <div className="absolute right-3 top-3 bottom-3 z-10 w-[308px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[372px] focus-within:w-[372px]">
           <ContextRail />
         </div>
+      </div>
+
+      {/* Icon Rail — fixed full-height left strip above the map (z40), below
+          Theater (z50). Sits over the floating rails (z10). */}
+      <div className="fixed left-0 top-0 bottom-0 z-40 w-14">
+        <IconRail />
       </div>
 
       {/* Row 3 — Ticker Dock */}

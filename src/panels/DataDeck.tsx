@@ -1,26 +1,23 @@
 /**
  * DataDeck.tsx — Left Rail "DATA DECK" (blueprint §1.3 / §3.4).
  *
- * Floating glass panel with a 3-tab segmented header (GROUPS | BRACKET | ODDS),
- * keyboard ←/→ to switch, and a 200ms slide+fade body swap. Three tab bodies:
- *   GROUPS  — vertical scroll-snap carousel of 2×2 group micro-cards + A–L rail.
- *   BRACKET — in-rail vertical knockout spine (collapsible rounds) + theater button.
- *   ODDS    — full 48-team champion list, normalized bars, % beside every bar.
+ * A single floating glass panel (hud-corners) holding a vertical STACK of three
+ * sections, top → bottom:
+ *   GROUPS      — compact single-group standings + A–L pill selector.
+ *   BRACKET     — compact teaser of the current/next knockout round.
+ *   WHO LIFTS IT — top-8 champion odds with normalized neon→gold bars.
+ * Each section is led by <SectionHeading> with a right-aligned action that opens
+ * the matching Theater view. The whole stack scrolls if it overflows.
+ *
  * Export name frozen: default `DataDeck`. FLOATING_PANEL recipe re-exported.
  */
-import { useCallback } from 'react';
-import { useHud, type DeckTab } from './uiStore';
+import { useHud } from './uiStore';
+import { SectionHeading } from './bits';
 import GroupsTab from './deck/GroupsTab';
 import BracketSpine from './deck/BracketSpine';
 import OddsTab from './deck/OddsTab';
 import RailShell, { type RailIcon } from './RailShell';
 import './panels.css';
-
-const TABS: { id: DeckTab; label: string }[] = [
-  { id: 'groups', label: 'GROUPS' },
-  { id: 'bracket', label: 'BRACKET' },
-  { id: 'odds', label: 'ODDS' },
-];
 
 /** Shared floating-panel recipe (blueprint §3.4). */
 export const FLOATING_PANEL =
@@ -61,56 +58,59 @@ const DECK_ICONS: RailIcon[] = [
   },
 ];
 
-function DeckPanel() {
-  const tab = useHud((s) => s.tab);
-  const setTab = useHud((s) => s.setTab);
-
-  // Keyboard ←/→ cycles tabs (only when the deck has focus within it).
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-      const idx = TABS.findIndex((t) => t.id === tab);
-      const next = e.key === 'ArrowRight'
-        ? (idx + 1) % TABS.length
-        : (idx - 1 + TABS.length) % TABS.length;
-      setTab(TABS[next].id);
-    },
-    [tab, setTab],
+/** Small right-aligned "view all" action used in each SectionHeading. */
+function HeadingAction({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-dust transition-colors hover:text-neon"
+    >
+      {label}
+      <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true">
+        <path d="M2 1.5L5.5 4.5L2 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
+}
+
+function DeckPanel() {
+  const setTheater = useHud((s) => s.setTheater);
 
   return (
     <section
       className={`group/deck hud-corners relative flex h-full flex-col overflow-hidden opacity-[0.72] transition-opacity duration-300 ease-[var(--ease-hud)] hover:opacity-100 focus-within:opacity-100 ${FLOATING_PANEL}`}
       aria-label="Data deck"
-      onKeyDown={onKeyDown}
     >
-      {/* Segmented tab header */}
-      <div
-        className="flex shrink-0 gap-0.5 border-b border-hairline p-1"
-        role="tablist"
-        aria-label="Data views"
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={tab === t.id}
-            data-active={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className="flex-1 rounded-md py-1.5 font-display text-[11px] font-semibold uppercase tracking-[0.16em] text-dust transition-colors hover:text-chalk data-[active=true]:bg-neon/10 data-[active=true]:text-neon data-[active=true]:shadow-[inset_0_-2px_0_var(--color-neon)]"
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-3.5">
+        {/* SECTION 1 — GROUPS */}
+        <section aria-label="Groups">
+          <SectionHeading
+            action={<HeadingAction label="View all" onClick={() => setTheater('groups')} />}
           >
-            {t.label}
-          </button>
-        ))}
-      </div>
+            Groups
+          </SectionHeading>
+          <GroupsTab />
+        </section>
 
-      {/* Tab body — each tab keyed so the 200ms slide+fade replays on swap */}
-      <div className="relative min-h-0 flex-1">
-        <div key={tab} className="hud-swap absolute inset-0 flex flex-col">
-          {tab === 'groups' && <GroupsTab />}
-          {tab === 'bracket' && <BracketSpine />}
-          {tab === 'odds' && <OddsTab />}
-        </div>
+        {/* SECTION 2 — BRACKET */}
+        <section aria-label="Bracket">
+          <SectionHeading
+            action={<HeadingAction label="Full bracket" onClick={() => setTheater('bracket')} />}
+          >
+            Bracket
+          </SectionHeading>
+          <BracketSpine />
+        </section>
+
+        {/* SECTION 3 — WHO LIFTS IT */}
+        <section aria-label="Who lifts it">
+          <SectionHeading
+            action={<HeadingAction label="View all" onClick={() => setTheater('odds')} />}
+          >
+            Who Lifts It
+          </SectionHeading>
+          <OddsTab />
+        </section>
       </div>
     </section>
   );

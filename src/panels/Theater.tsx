@@ -3,44 +3,77 @@
  *
  * z-50 fixed overlay, 92vw×84vh glass panel, backdrop blur+dim, Esc/✕/click-out
  * to close (all → setTheater(null)). One component, three views:
- *   'bracket' — the full SVG bracket tree with wheel zoom + drag pan
- *               (transform on an inner <g>, touch-action: none).
+ *   'bracket' — the full SVG bracket tree with wheel zoom + drag pan, driven
+ *               purely by scroll offsets + a resizing box (NO css transform, so
+ *               the foreignObject nodes never blank out mid-drag in Blink).
  *   'groups'  — all 12 group cards in a grid.
  *   'odds'    — the full odds table, large.
  * Export name frozen: default `Theater`.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHud } from './uiStore';
 import { FLOATING_PANEL } from './DataDeck';
-import Bracket from './Bracket';
+import Bracket, { BRACKET_BASE_W, BRACKET_BASE_H } from './Bracket';
 import { useWorldCup } from '../data/store';
 import { signedGD, formatPct } from './hud';
 import { Flag } from './bits';
 import type { Group } from '../lib/types';
 
-// ── Bracket view: wheel zoom + drag pan ──────────────────────────────────────────
+// ── Bracket view: TRANSFORM-FREE wheel zoom + drag pan ───────────────────────────
+//
+// foreignObject (HTML-in-SVG) blanks out under a continuously-changing CSS
+// transform in Blink, so we never transform any ancestor of the <svg>. Instead:
+//   • A scroll container (overflow-auto) owns position.
+//   • An inner box is sized base*zoom; the <svg> (width/height 100% + viewBox)
+//     rescales cleanly to fill it — no transform involved.
+//   • PAN = adjust scrollLeft/scrollTop by the negative pointer delta.
+//   • ZOOM = wheel changes `zoom`; we re-anchor scroll so the point under the
+//     cursor stays put. The box resizes and the svg rescales via its viewBox.
+
+const ZOOM_MIN = 0.4;
+const ZOOM_MAX = 3;
+const FIT_PAD = 32; // px breathing room around the fitted bracket
 
 function BracketStage() {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [t, setT] = useState({ x: 0, y: 0, k: 1 });
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  // Intrinsic bracket aspect: prefer the live viewBox, fall back to nominal base.
+  const [base, setBase] = useState({ w: BRACKET_BASE_W, h: BRACKET_BASE_H });
+  const [zoom, setZoom] = useState(1);
+  const fitted = useRef(false);
+  const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
 
-  // Fit-to-view once the tree has measured.
+  const innerW = base.w * zoom;
+  const innerH = base.h * zoom;
+
+  // Read the real intrinsic size from the rendered <svg> viewBox, then fit once.
   useEffect(() => {
     const fit = () => {
       const wrap = wrapRef.current;
-      const inner = innerRef.current;
-      if (!wrap || !inner) return;
-      const svg = inner.querySelector('svg');
-      if (!svg) return;
+      if (!wrap) return;
+      const svg = wrap.querySelector('svg');
+      let bw = BRACKET_BASE_W;
+      let bh = BRACKET_BASE_H;
+      const vb = svg?.getAttribute('viewBox');
+      if (vb) {
+        const parts = vb.split(/[\s,]+/).map(Number);
+        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+          bw = parts[2];
+          bh = parts[3];
+        }
+      }
+      setBase({ w: bw, h: bh });
+      if (fitted.current) return;
       const cw = wrap.clientWidth;
       const ch = wrap.clientHeight;
-      const iw = svg.clientWidth || parseFloat(svg.getAttribute('width') || '0');
-      const ih = svg.clientHeight || parseFloat(svg.getAttribute('height') || '0');
-      if (!iw || !ih) return;
-      const k = Math.min((cw - 48) / iw, (ch - 48) / ih, 1.4);
-      setT({ x: (cw - iw * k) / 2, y: (ch - ih * k) / 2, k });
+      if (!cw || !ch) return;
+      // Fit to WIDTH so the bracket fills the container horizontally on open;
+      // the user can vertically scroll / drag-pan as needed.
+      const k = Math.min(
+        Math.max((cw - FIT_PAD * 2) / bw, ZOOM_MIN),
+        ZOOM_MAX,
+      );
+      setZoom(k);
+      fitted.current = true;
     };
     const id = window.setTimeout(fit, 30);
     window.addEventListener('resize', fit);
@@ -50,61 +83,71 @@ function BracketStage() {
     };
   }, []);
 
-  const onWheel = (e: React.WheelEvent) => {
+  // After a fit: center horizontally, start at the top vertically.
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    wrap.scrollLeft = Math.max(0, (innerW - wrap.clientWidth) / 2);
+    wrap.scrollTop = 0;
+    // Only re-center on a fresh fit (base changes), not on every zoom nudge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base.w, base.h]);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const wrap = wrapRef.current;
     if (!wrap) return;
     const rect = wrap.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    setT((prev) => {
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const k = Math.min(3, Math.max(0.3, prev.k * factor));
-      const ratio = k / prev.k;
-      // zoom toward cursor
-      return {
-        k,
-        x: mx - (mx - prev.x) * ratio,
-        y: my - (my - prev.y) * ratio,
-      };
+    // Pointer position inside the *content* (scroll offset + cursor offset).
+    const px = wrap.scrollLeft + (e.clientX - rect.left);
+    const py = wrap.scrollTop + (e.clientY - rect.top);
+    setZoom((prev) => {
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev * Math.exp(-e.deltaY * 0.0015)));
+      const ratio = next / prev;
+      if (ratio === 1) return prev;
+      // Keep the point under the cursor stable after the box resizes.
+      const newScrollLeft = px * ratio - (e.clientX - rect.left);
+      const newScrollTop = py * ratio - (e.clientY - rect.top);
+      requestAnimationFrame(() => {
+        const w = wrapRef.current;
+        if (!w) return;
+        w.scrollLeft = newScrollLeft;
+        w.scrollTop = newScrollTop;
+      });
+      return next;
     });
-  };
+  }, []);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, ox: t.x, oy: t.y };
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    setT((prev) => ({
-      ...prev,
-      x: drag.current!.ox + (e.clientX - drag.current!.x),
-      y: drag.current!.oy + (e.clientY - drag.current!.y),
-    }));
+    const wrap = wrapRef.current;
+    if (!drag.current || !wrap) return;
+    wrap.scrollLeft = drag.current.sl - (e.clientX - drag.current.x);
+    wrap.scrollTop = drag.current.st - (e.clientY - drag.current.y);
   };
   const endDrag = () => {
     drag.current = null;
   };
 
   return (
-    <div
-      ref={wrapRef}
-      onWheel={onWheel}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerLeave={endDrag}
-      className="relative h-full w-full cursor-grab overflow-hidden active:cursor-grabbing [touch-action:none]"
-    >
+    <div className="relative h-full w-full">
       <div
-        ref={innerRef}
-        style={{
-          transform: `translate(${t.x}px, ${t.y}px) scale(${t.k})`,
-          transformOrigin: '0 0',
-          width: 'max-content',
-        }}
+        ref={wrapRef}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        className="h-full w-full cursor-grab overflow-auto overscroll-contain active:cursor-grabbing [scrollbar-width:none] [touch-action:none] [&::-webkit-scrollbar]:hidden"
       >
-        <Bracket />
+        <div style={{ width: innerW, height: innerH }}>
+          <Bracket />
+        </div>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-4 text-[10px] uppercase tracking-[0.16em] text-dust/70">
         scroll to zoom · drag to pan
@@ -124,14 +167,14 @@ function TheaterGroupCard({ group }: { group: Group }) {
   const rows = useMemo(() => [...group.rows].sort((a, b) => a.rank - b.rank), [group.rows]);
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-hairline bg-white/[0.02] p-3">
+    <div className="relative overflow-hidden rounded-xl border border-hairline bg-white/[0.02] p-3.5">
       <span
         aria-hidden="true"
         className="pointer-events-none absolute -right-2 -top-3 select-none font-display text-[72px] font-bold leading-none text-white/[0.04]"
       >
         {group.id}
       </span>
-      <div className="relative mb-2 font-display text-[11px] font-semibold uppercase tracking-[0.2em] text-dust">
+      <div className="relative mb-2.5 font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-dust">
         Group {group.id}
       </div>
       <div className="relative flex flex-col gap-0.5">
@@ -182,8 +225,8 @@ function TheaterGroupCard({ group }: { group: Group }) {
 function GroupsStage() {
   const groups = useWorldCup((s) => s.groups);
   return (
-    <div className="h-full overflow-y-auto overscroll-contain p-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+    <div className="h-full overflow-y-auto overscroll-contain p-5">
+      <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 lg:grid-cols-4">
         {groups.map((g) => (
           <TheaterGroupCard key={g.id} group={g} />
         ))}
@@ -214,12 +257,13 @@ function OddsStage() {
   const maxP = ranked[0]?.o.pChampion ?? 1;
 
   return (
-    <div className="h-full overflow-y-auto overscroll-contain p-4">
+    <div className="h-full overflow-y-auto overscroll-contain p-5">
       <div className="mx-auto max-w-4xl">
         {/* header row */}
-        <div className="mb-2 grid grid-cols-[40px_1fr_90px_90px_90px_90px] items-center gap-2 border-b border-hairline px-2 pb-1.5 font-display text-[9px] font-semibold uppercase tracking-[0.16em] text-dust">
+        <div className="mb-2 grid grid-cols-[36px_170px_1fr_72px_72px_72px_76px] items-center gap-2 border-b border-hairline px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
           <span className="text-right">#</span>
           <span>Team</span>
+          <span>{/* bar column — no label */}</span>
           <span className="text-right">R16</span>
           <span className="text-right">QF</span>
           <span className="text-right">SF</span>
@@ -237,21 +281,25 @@ function OddsStage() {
                   setFocusTeam(teamId);
                   setTheater(null);
                 }}
-                className="grid grid-cols-[40px_1fr_90px_90px_90px_90px] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.05]"
+                className="grid grid-cols-[36px_170px_1fr_72px_72px_72px_76px] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.05]"
               >
+                {/* # */}
                 <span className={`text-right font-display text-[14px] font-bold tabular-nums ${isLeader ? 'text-gold' : 'text-dust'}`}>
                   {i + 1}
                 </span>
+                {/* team — fixed 170px: flag + truncated name */}
                 <span className="flex min-w-0 items-center gap-2.5">
-                  <Flag url={team?.flagUrl} className="h-[14px] w-[21px]" />
+                  <Flag url={team?.flagUrl} className="h-[14px] w-[21px] shrink-0" />
                   <span className="truncate font-display text-[14px] font-semibold text-chalk/90">{team?.name ?? teamId}</span>
-                  <span className="ml-2 hidden h-[6px] flex-1 overflow-hidden rounded-full bg-white/5 sm:block">
-                    <span
-                      className={`block h-full rounded-full ${isLeader ? 'bg-gradient-to-r from-neon to-gold' : 'bg-gradient-to-r from-neon to-gold/70'} transition-[width] duration-700`}
-                      style={{ width: `${barPct}%` }}
-                    />
-                  </span>
                 </span>
+                {/* bar — own 1fr column, aligned across all rows */}
+                <span className="flex h-[6px] overflow-hidden rounded-full bg-white/5">
+                  <span
+                    className={`block h-full rounded-full ${isLeader ? 'bg-gradient-to-r from-neon to-gold' : 'bg-gradient-to-r from-neon to-gold/70'} transition-[width] duration-700`}
+                    style={{ width: `${barPct}%` }}
+                  />
+                </span>
+                {/* stage columns */}
                 <span className="text-right text-[12px] tabular-nums text-dust">{formatPct(o.pR16)}</span>
                 <span className="text-right text-[12px] tabular-nums text-dust">{formatPct(o.pQF)}</span>
                 <span className="text-right text-[12px] tabular-nums text-dust">{formatPct(o.pSF)}</span>
@@ -299,10 +347,14 @@ export default function Theater() {
       aria-label={`${theater} theater`}
     >
       <div
-        className={`relative flex h-[84vh] w-[92vw] flex-col overflow-hidden ${FLOATING_PANEL}`}
+        className={`relative flex h-[82vh] w-[min(980px,92vw)] flex-col overflow-hidden ${FLOATING_PANEL}`}
+        // Opaque dark surface overrides the glass translucency so nothing bleeds
+        // through during interaction (esp. the bracket pan/zoom) while keeping the
+        // hairline border + shadow + rounded corners from FLOATING_PANEL.
+        style={{ backgroundColor: 'var(--color-pitch)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-3.5">
           <span className="font-display text-[12px] font-semibold uppercase tracking-[0.2em] text-chalk/80">
             {TITLES[theater] ?? theater}
           </span>

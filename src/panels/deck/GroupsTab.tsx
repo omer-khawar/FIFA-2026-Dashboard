@@ -1,24 +1,57 @@
 /**
- * GroupsTab.tsx — GROUPS view of the Data Deck (blueprint §1.3 / §3.5).
+ * GroupsTab.tsx — GROUPS section of the stacked Data Deck.
  *
- * Vertical scroll-snap carousel: pages of 4 group micro-cards (2×2), with an A–L
- * letter jump-rail pinned to the panel edge (click = scrollIntoView). Each
- * micro-card: oversized group-letter watermark behind 4 rows — rank-dot, 20px
- * flag, code, Pts (bold), GD (signed), advance-prob micro-bar (pR32). Rows are
- * SORTED BY row.rank (defect 1). noteColor renders as a 2px inner-left bar.
- * Clicking a team row → setFocusTeam(teamId).
+ * A compact single-group standings view. A horizontal A–L pill selector sits
+ * above the table (pills only for groups that exist; the selected one in neon).
+ * Default selection follows the focused team's group (teams[focusTeamId].groupId)
+ * and falls back to "A". Below it: a sub-label column-header row, then the group
+ * rows at h-7 each — rank dot, flag, code, compact P/W/D/L, signed GD, Pts as a
+ * numeric hero, and a thin neon advance-prob bar (pR32). Rows are SORTED BY
+ * row.rank and carry the noteColor accent + live dot. Clicking a row →
+ * setFocusTeam(teamId).
  */
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useWorldCup } from '../../data/store';
 import { useHud } from '../uiStore';
 import type { Group } from '../../lib/types';
+import { Flag } from '../bits';
 import { signedGD } from '../hud';
 
-function GroupCard({ group }: { group: Group }) {
+const ALL_LETTERS = 'ABCDEFGHIJKL'.split('');
+
+export default function GroupsTab() {
+  const groups = useWorldCup((s) => s.groups);
   const teams = useWorldCup((s) => s.teams);
   const predictions = useWorldCup((s) => s.predictions);
   const matches = useWorldCup((s) => s.matches);
+  const focusTeamId = useHud((s) => s.focusTeamId);
   const setFocusTeam = useHud((s) => s.setFocusTeam);
+
+  // Groups that actually exist, in alphabetical order.
+  const present = useMemo(() => {
+    const ids = new Set(groups.map((g) => g.id));
+    return ALL_LETTERS.filter((l) => ids.has(l));
+  }, [groups]);
+
+  // Default-selected group: the focused team's group, else first present, else "A".
+  const focusGroup = focusTeamId ? teams[focusTeamId]?.groupId : undefined;
+  const [selected, setSelected] = useState<string>(() => focusGroup ?? present[0] ?? 'A');
+
+  // Follow the focus team into its group, and keep the selection valid as data loads.
+  useEffect(() => {
+    if (focusGroup && present.includes(focusGroup)) {
+      setSelected(focusGroup);
+    } else if (present.length > 0 && !present.includes(selected)) {
+      setSelected(present[0]);
+    }
+    // selected intentionally omitted — we only want to react to focus/data changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusGroup, present]);
+
+  const group: Group | undefined = useMemo(
+    () => groups.find((g) => g.id === selected),
+    [groups, selected],
+  );
 
   // teamIds currently in a live match (for the live dot).
   const liveTeamIds = useMemo(() => {
@@ -33,28 +66,50 @@ function GroupCard({ group }: { group: Group }) {
 
   // Defect 1 — sort by rank before render.
   const rows = useMemo(
-    () => [...group.rows].sort((a, b) => a.rank - b.rank),
-    [group.rows],
+    () => (group ? [...group.rows].sort((a, b) => a.rank - b.rank) : []),
+    [group],
   );
 
-  return (
-    <div
-      id={`group-card-${group.id}`}
-      className="relative flex flex-col overflow-hidden rounded-lg border border-hairline bg-white/[0.02] px-2.5 pb-2 pt-1.5"
-    >
-      {/* Oversized group-letter watermark */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-1 -top-2 select-none font-display text-[52px] font-bold leading-none text-white/[0.04]"
-      >
-        {group.id}
-      </span>
+  if (groups.length === 0) {
+    return <div className="px-1 py-2 text-[12px] text-dust">Groups loading…</div>;
+  }
 
-      <div className="relative mb-1 font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-dust">
-        Group {group.id}
+  return (
+    <div className="flex flex-col">
+      {/* A–L group selector pills */}
+      <div className="mb-2 flex flex-wrap gap-1">
+        {present.map((l) => {
+          const active = l === selected;
+          return (
+            <button
+              key={l}
+              onClick={() => setSelected(l)}
+              aria-pressed={active}
+              className={`grid h-6 w-6 place-items-center rounded-md border font-display text-[11px] font-bold tabular-nums transition-colors ${
+                active
+                  ? 'border-neon/60 bg-neon/10 text-neon'
+                  : 'border-hairline text-dust hover:border-neon/30 hover:text-chalk'
+              }`}
+            >
+              {l}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="relative flex flex-col">
+      {/* Column header row (sub-labels) */}
+      <div className="flex h-5 items-center gap-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
+        <span className="w-[14px] shrink-0" aria-hidden="true" />
+        <span className="w-5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1">Team</span>
+        <span className="w-[58px] shrink-0 text-right tracking-[0.08em]">P W D L</span>
+        <span className="w-6 shrink-0 text-right">GD</span>
+        <span className="w-5 shrink-0 text-right">Pts</span>
+        <span className="w-7 shrink-0 text-right">R32</span>
+      </div>
+
+      {/* Standings rows — equal h-7 each */}
+      <div className="flex flex-col">
         {rows.map((row) => {
           const team = teams[row.teamId];
           const isLive = liveTeamIds.has(row.teamId);
@@ -63,13 +118,13 @@ function GroupCard({ group }: { group: Group }) {
             <button
               key={row.teamId}
               onClick={() => setFocusTeam(row.teamId)}
-              className="group/row relative flex items-center gap-1.5 rounded-[3px] py-[3px] pl-2 pr-0.5 text-left transition-colors hover:bg-white/[0.05]"
+              className="group/row relative flex h-7 items-center gap-1.5 rounded-[4px] px-1.5 text-left transition-colors hover:bg-white/[0.05]"
             >
               {/* noteColor 2px inner-left bar */}
               {row.noteColor && (
                 <span
                   aria-hidden="true"
-                  className="absolute left-0 top-1/2 h-[14px] w-[2px] -translate-y-1/2 rounded-full"
+                  className="absolute left-0 top-1/2 h-[16px] w-[2px] -translate-y-1/2 rounded-full"
                   style={{ background: row.noteColor }}
                   title={row.noteDesc ?? ''}
                 />
@@ -80,18 +135,9 @@ function GroupCard({ group }: { group: Group }) {
                 {row.rank}
               </span>
 
-              {/* flag (20px) */}
+              {/* flag + live dot */}
               <span className="relative flex shrink-0 items-center">
-                {team?.flagUrl ? (
-                  <img
-                    src={team.flagUrl}
-                    alt=""
-                    loading="lazy"
-                    className="h-[13px] w-[20px] rounded-[1px] object-cover"
-                  />
-                ) : (
-                  <span className="h-[13px] w-[20px] rounded-[1px] bg-white/[0.06]" />
-                )}
+                <Flag url={team?.flagUrl} className="h-[13px] w-5" />
                 {isLive && (
                   <span
                     aria-label="Live"
@@ -101,20 +147,28 @@ function GroupCard({ group }: { group: Group }) {
                 )}
               </span>
 
-              <span className="min-w-0 flex-1 truncate font-display text-[11px] font-semibold text-chalk/90">
+              {/* code */}
+              <span className="min-w-0 flex-1 truncate font-display text-[12px] font-semibold text-chalk/85">
                 {team?.code ?? row.teamId}
               </span>
 
-              <span className="w-4 shrink-0 text-right font-display text-[12px] font-bold tabular-nums text-chalk">
-                {row.points}
+              {/* compact P/W/D/L */}
+              <span className="w-[58px] shrink-0 text-right text-[10px] tabular-nums text-dust">
+                {row.played} {row.won} {row.drawn} {row.lost}
               </span>
 
-              <span className="w-5 shrink-0 text-right text-[10px] tabular-nums text-dust">
+              {/* signed GD */}
+              <span className="w-6 shrink-0 text-right text-[10px] tabular-nums text-dust">
                 {signedGD(row.gd)}
               </span>
 
-              {/* advance-prob micro-bar */}
-              <span className="h-[3px] w-5 shrink-0 overflow-hidden rounded-full bg-white/[0.06]">
+              {/* Pts — numeric hero */}
+              <span className="w-5 shrink-0 text-right font-display text-[13px] font-bold tabular-nums text-chalk">
+                {row.points}
+              </span>
+
+              {/* thin neon advance-prob bar (pR32) */}
+              <span className="h-[3px] w-7 shrink-0 self-center overflow-hidden rounded-full bg-white/[0.06]">
                 {pR32 !== undefined && (
                   <span
                     className="block h-full rounded-full bg-neon/80 transition-[width] duration-700 ease-[var(--ease-hud)]"
@@ -123,60 +177,6 @@ function GroupCard({ group }: { group: Group }) {
                   />
                 )}
               </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export default function GroupsTab() {
-  const groups = useWorldCup((s) => s.groups);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Letters A–L for the jump rail (only ones present render as live links).
-  const present = useMemo(() => new Set(groups.map((g) => g.id)), [groups]);
-  const letters = 'ABCDEFGHIJKL'.split('');
-
-  const jump = (id: string) => {
-    const el = document.getElementById(`group-card-${id}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
-  if (groups.length === 0) {
-    return <div className="p-3 text-[11px] text-dust">Groups loading…</div>;
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1">
-      {/* Scroll-snap carousel: 2-col grid, snap by row */}
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 pr-1 [scroll-snap-type:y_mandatory]"
-      >
-        <div className="grid grid-cols-2 gap-2">
-          {groups.map((g) => (
-            <div key={g.id} className="[scroll-snap-align:start]">
-              <GroupCard group={g} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* A–L jump rail pinned to the panel edge */}
-      <div className="flex w-5 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-hairline py-2">
-        {letters.map((l) => {
-          const active = present.has(l);
-          return (
-            <button
-              key={l}
-              disabled={!active}
-              onClick={() => jump(l)}
-              aria-label={`Jump to group ${l}`}
-              className="font-display text-[9px] font-semibold leading-none text-dust transition-colors enabled:hover:text-neon disabled:opacity-30"
-            >
-              {l}
             </button>
           );
         })}

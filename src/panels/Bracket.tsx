@@ -27,6 +27,16 @@ const THIRD_OFFSET = 22;
 const BRACKET_STAGE_ORDER: Stage[] = ['r32', 'r16', 'qf', 'sf', 'final'];
 const STAGE_COL: Partial<Record<Stage, number>> = { r32: 0, r16: 1, qf: 2, sf: 3, final: 4 };
 
+/**
+ * Nominal intrinsic size of a full 5-column bracket (R32→Final, 16 R32 ties),
+ * used by the Theater as a fallback aspect before it reads the live viewBox.
+ * Kept in sync with the layout constants above. Presentation only — the real
+ * dimensions still come from the rendered <svg viewBox>.
+ */
+export const BRACKET_BASE_W = 5 * COL_W - COL_GAP;
+export const BRACKET_BASE_H =
+  STAGE_LABEL_H + (16 * NODE_H + 15 * ROW_GAP) + (NODE_H + THIRD_OFFSET + 28);
+
 const ROUND_LABEL_TO_STAGE: Record<string, Stage> = {
   'round of 32': 'r32',
   'round of 16': 'r16',
@@ -224,9 +234,10 @@ export default function Bracket() {
 
   return (
     <svg
-      width={totalW}
-      height={svgH}
+      width="100%"
+      height="100%"
       viewBox={`0 0 ${totalW} ${svgH}`}
+      preserveAspectRatio="xMidYMid meet"
       xmlns="http://www.w3.org/2000/svg"
       style={{ display: 'block', overflow: 'visible' }}
     >

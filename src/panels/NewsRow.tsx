@@ -1,10 +1,11 @@
 /**
- * NewsRow.tsx — contextual news list for the Context Rail (blueprint §1.4 / §3).
+ * NewsRow.tsx — contextual "RELATED NEWS" feed for the Context Rail (blueprint §1.4 / §3).
  *
- * Vertical list of compact 64px rows: 56×42 thumb (graceful no-image block),
- * 2-line clamped headline, time-ago. The whole row is the outbound <a>. Accepts
- * the already-scored/sorted items as a prop (scoring lives in hud.ts /
- * ContextRail). The old bottom-of-page news band is gone.
+ * Prominent, image-led cards (not an afterthought): each card is a fixed ~84px
+ * tall row with a larger 96×64 rounded thumbnail (graceful empty-state block), a
+ * 2-line clamped headline in body scale, and a time-ago sub-label. The whole card
+ * is the outbound <a>. Accepts the already-scored/sorted items as a prop (scoring
+ * lives in hud.ts / ContextRail — frozen). Cards are equal height.
  */
 import type { NewsItem } from '../lib/types';
 import { timeAgo } from '../lib/format';
@@ -16,28 +17,32 @@ export function NewsListRow({ item }: { item: NewsItem }) {
       target="_blank"
       rel="noopener noreferrer"
       aria-label={item.headline}
-      className="group flex h-16 items-center gap-3 rounded-lg border border-transparent px-2 transition-colors hover:border-hairline hover:bg-white/[0.04]"
+      className="group flex h-[84px] items-center gap-3 rounded-xl border border-hairline bg-white/[0.02] p-2.5 transition-colors hover:border-neon/40 hover:bg-white/[0.05]"
     >
-      {/* Thumb 56×42 */}
-      <div className="grid h-[42px] w-[56px] shrink-0 place-items-center overflow-hidden rounded-md bg-white/[0.05]">
+      {/* Thumb 96×64 — larger, image-led */}
+      <div className="grid h-16 w-24 shrink-0 place-items-center overflow-hidden rounded-lg bg-white/[0.05]">
         {item.imageUrl ? (
           <img
             src={item.imageUrl}
             alt=""
             loading="lazy"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover transition-transform duration-500 ease-[var(--ease-hud)] group-hover:scale-[1.04]"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = 'none';
             }}
           />
         ) : (
-          <span className="h-3 w-3 rounded-full border border-dust/40" aria-hidden="true" />
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-dust/40">
+            <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.4" />
+            <circle cx="8.5" cy="9" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M4 17l4.5-4.5L13 17l3-3 4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         )}
       </div>
 
       {/* Body */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="line-clamp-2 text-[12px] leading-[1.35] text-chalk/90 transition-colors group-hover:text-chalk">
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="line-clamp-2 text-[12px] leading-[1.35] text-chalk/85 transition-colors group-hover:text-chalk">
           {item.headline}
         </span>
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
@@ -51,11 +56,13 @@ export function NewsListRow({ item }: { item: NewsItem }) {
 export default function NewsRow({ items }: { items: NewsItem[] }) {
   if (items.length === 0) {
     return (
-      <div className="px-2 py-3 text-[11px] text-dust">No news available</div>
+      <div className="rounded-xl border border-hairline bg-white/[0.02] px-3 py-5 text-center text-[11px] text-dust">
+        No related news right now.
+      </div>
     );
   }
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-2">
       {items.map((item) => (
         <NewsListRow key={item.id} item={item} />
       ))}

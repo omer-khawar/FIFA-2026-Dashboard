@@ -55,3 +55,44 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+/** Prominent section header with an optional right-aligned action slot. */
+export function SectionHeading({
+  children,
+  action,
+}: {
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-1 pb-2 pt-1">
+      <h2 className="font-display text-[13px] font-semibold uppercase tracking-[0.18em] text-dust">
+        {children}
+      </h2>
+      {action}
+    </div>
+  );
+}
+
+/** Tiny uppercase status chip (live / today / neutral tones). */
+export function StatTag({
+  children,
+  tone = 'neutral',
+}: {
+  children: React.ReactNode;
+  tone?: 'live' | 'today' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'live'
+      ? 'text-live bg-live/15'
+      : tone === 'today'
+        ? 'text-ember bg-ember/15'
+        : 'text-dust bg-white/[0.06]';
+  return (
+    <span
+      className={`inline-flex items-center rounded-[3px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] ${toneClass}`}
+    >
+      {children}
+    </span>
+  );
+}
