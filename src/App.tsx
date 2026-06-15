@@ -44,28 +44,42 @@ export default function App() {
   usePredictions();
 
   return (
-    <div className="grid h-dvh grid-rows-[52px_1fr_118px] overflow-hidden">
-      {/* Row 1 — TopBar */}
-      <TopBar />
+    <div className="relative h-dvh overflow-hidden">
+      {/* FULL-BLEED MAP STAGE — the <Scene> canvas spans the ENTIRE viewport (100vh),
+          all the way to the bottom edge. It is NOT confined to a grid row, so there
+          is no leftover track beneath it and therefore no canvas↔body seam: the
+          ticker dock is a floating pill ON the map. Camera framing is unchanged and
+          stays clear of the rails / floating header / floating dock (verified). */}
+      <div className="absolute inset-0 z-0">
+        <MapPanel />
+      </div>
 
-      {/* Row 2 — Stage: full-bleed map behind two floating rails */}
-      <div className="relative min-h-0">
-        {/* Stage: the full-bleed map sits behind the floating rails. */}
-        <div className="absolute inset-0 z-0">
-          <MapPanel />
+      {/* TRANSPARENT HUD scaffold over the stage — TWO rows now: the 96px banner and
+          a 1fr track that fills the ENTIRE rest of the viewport. The ticker no longer
+          owns a grid track (it floats independently), so the 1fr row stretches all the
+          way to the bottom and the side rails fill it. pointer-events-none lets clicks
+          fall through to the map (beacons) except on the interactive HUD surfaces. */}
+      <div className="pointer-events-none relative z-10 grid h-full grid-rows-[96px_1fr]">
+        {/* Row 1 — TopBar banner (floats over the top of the map) */}
+        <div className="pointer-events-auto">
+          <TopBar />
         </div>
 
-        {/* Left Rail — DATA DECK. Slim idle width frees map; hover / keyboard
-            focus expands it as an overlay (camera is framed for the idle width,
-            so expansion never reframes the map). */}
-        <div className="absolute left-[68px] top-3 bottom-3 z-10 w-[280px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[360px] focus-within:w-[360px]">
-          <DataDeck />
-        </div>
+        {/* Row 2 — floating rails. Now stretch to the bottom of the screen (bottom-6
+            keeps a comfortable margin off the raw edge); they flank the floating dock. */}
+        <div className="relative min-h-0">
+          {/* Left Rail — DATA DECK. Slim idle width frees map; hover / keyboard
+              focus expands it as an overlay (camera is framed for the idle width,
+              so expansion never reframes the map). */}
+          <div className="pointer-events-auto absolute left-[68px] top-3 bottom-6 z-10 w-[280px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[360px] focus-within:w-[360px]">
+            <DataDeck />
+          </div>
 
-        {/* Right Rail — CONTEXT. Right-anchored, so hover/focus expansion grows
-            leftward over the map as an overlay (camera unaffected). */}
-        <div className="absolute right-3 top-3 bottom-3 z-10 w-[308px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[372px] focus-within:w-[372px]">
-          <ContextRail />
+          {/* Right Rail — CONTEXT. Right-anchored, so hover/focus expansion grows
+              leftward over the map as an overlay (camera unaffected). */}
+          <div className="pointer-events-auto absolute right-3 top-3 bottom-6 z-10 w-[308px] transition-[width] duration-300 ease-[var(--ease-hud)] hover:w-[372px] focus-within:w-[372px]">
+            <ContextRail />
+          </div>
         </div>
       </div>
 
@@ -75,7 +89,8 @@ export default function App() {
         <IconRail />
       </div>
 
-      {/* Row 3 — Ticker Dock */}
+      {/* Ticker Dock — fully decoupled from the grid: a centered pill floating over
+          the map's bottom edge (z30), flanked by the side rails. */}
       <TickerDock />
 
       {/* Theater overlay (mounted last; z50, fixed) */}

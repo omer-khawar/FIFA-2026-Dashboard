@@ -325,19 +325,21 @@ export default function TickerDock() {
   }, [dockOpen, setDockOpen]);
 
   return (
-    <div className="relative z-20 h-full w-full px-3 pb-3">
+    <div className="pointer-events-none fixed inset-0 z-30">
       {/* Backdrop when the sheet is open */}
       {dockOpen && (
         <div
-          className="fixed inset-0 z-10 bg-void/50 backdrop-blur-sm"
+          className="pointer-events-auto fixed inset-0 z-10 bg-void/50 backdrop-blur-sm"
           onClick={() => setDockOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      {/* The dock surface — centered floating pill when collapsed, wide sheet when expanded */}
+      {/* The dock surface — a centered pill floating over the map's bottom edge when
+          collapsed, a wide sheet when expanded. The wrapper is pointer-events-none so
+          the map shows/clicks through around it; the surface itself re-enables them. */}
       <div
-        className={`absolute bottom-3 z-20 flex flex-col overflow-hidden rounded-2xl border border-hairline bg-glass backdrop-blur-xl shadow-[0_8px_40px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.04)] transition-[height] duration-[280ms] ease-[var(--ease-hud)] ${
+        className={`pointer-events-auto absolute bottom-6 z-20 flex flex-col overflow-hidden rounded-2xl border border-hairline bg-glass backdrop-blur-xl shadow-[0_8px_40px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.04)] transition-[height] duration-[280ms] ease-[var(--ease-hud)] ${
           dockOpen
             ? 'left-[68px] right-3 h-[58vh]'
             : 'left-1/2 -translate-x-1/2 w-[min(880px,calc(100%-100px))] h-[140px]'

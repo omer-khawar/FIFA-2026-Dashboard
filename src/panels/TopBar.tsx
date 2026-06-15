@@ -33,13 +33,14 @@ export default function TopBar() {
   };
 
   return (
-    <header className="relative z-40 flex h-[52px] w-full items-center gap-4 pl-[60px] pr-4">
-      {/* Page title — clears the 56px floating icon rail via pl-[60px] */}
-      <h1 className="flex min-w-0 items-baseline gap-2.5">
-        <span className="font-display text-[22px] font-bold leading-none tracking-[0.02em] text-chalk">
+    <header className="relative z-40 flex h-full w-full items-center gap-4 border-b border-hairline bg-gradient-to-b from-pitch/85 via-pitch/40 to-transparent pl-[60px] pr-5">
+      {/* Page title — clears the 56px floating icon rail via pl-[60px]. Stacked
+          title + tagline fills the taller banner. */}
+      <h1 className="flex min-w-0 flex-col justify-center gap-1.5">
+        <span className="font-display text-[30px] font-bold leading-none tracking-[0.02em] text-chalk">
           World Cup <span className="text-neon">2026</span>
         </span>
-        <span className="hidden text-[10px] font-semibold uppercase tracking-[0.14em] text-dust sm:inline">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-dust">
           Live Tracker
         </span>
       </h1>
