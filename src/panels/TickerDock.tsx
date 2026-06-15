@@ -340,7 +340,7 @@ export default function TickerDock() {
         className={`absolute bottom-3 z-20 flex flex-col overflow-hidden rounded-2xl border border-hairline bg-glass backdrop-blur-xl shadow-[0_8px_40px_rgb(0_0_0/0.5),inset_0_1px_0_rgb(255_255_255/0.04)] transition-[height] duration-[280ms] ease-[var(--ease-hud)] ${
           dockOpen
             ? 'left-[68px] right-3 h-[58vh]'
-            : 'left-1/2 -translate-x-1/2 w-[min(880px,calc(100%-100px))] h-[116px]'
+            : 'left-1/2 -translate-x-1/2 w-[min(880px,calc(100%-100px))] h-[140px]'
         }`}
       >
         {/* Handle / header */}
