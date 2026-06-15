@@ -350,7 +350,7 @@ export default function TickerDock() {
           aria-expanded={dockOpen}
           className="group flex shrink-0 items-center gap-2 px-3 pb-1 pt-1.5"
         >
-          <span className="font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-dust">
+          <span className="font-display text-[13px] font-bold uppercase tracking-[0.16em] text-chalk/85">
             {dockOpen ? 'All Matches' : 'Matches'}
           </span>
           <span className="mx-auto h-1 w-10 rounded-full bg-white/10 transition-colors group-hover:bg-white/20" aria-hidden="true" />
@@ -366,12 +366,17 @@ export default function TickerDock() {
         ) : (
           <div
             ref={stripRef}
-            className="flex min-h-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden px-3 pb-2 [scroll-snap-type:x_proximity]"
+            className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-3 pb-2 [scroll-snap-type:x_proximity]"
           >
             {strip.length === 0 ? (
-              <div className="flex items-center text-[11px] text-dust">No matches to display</div>
+              <div className="flex h-full items-center justify-center text-[11px] text-dust">No matches to display</div>
             ) : (
-              strip.map((m) => <TickerCard key={m.id} match={m} />)
+              // w-max + mx-auto: the row centers as a unified group when the cards
+              // don't fill the dock, and falls back to left-aligned scrolling when
+              // they overflow — so neither side is ever flush while the other gaps.
+              <div className="mx-auto flex w-max gap-2">
+                {strip.map((m) => <TickerCard key={m.id} match={m} />)}
+              </div>
             )}
           </div>
         )}

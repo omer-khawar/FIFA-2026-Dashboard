@@ -353,7 +353,7 @@ function ContextPanel() {
       aria-label="Context"
       data-active={asserted ? 'true' : undefined}
     >
-      <div className="shrink-0 border-b border-hairline px-4 py-3 font-display text-[10px] font-semibold uppercase tracking-[0.2em] text-dust">
+      <div className="shrink-0 border-b border-hairline px-4 py-3 font-display text-[13px] font-bold uppercase tracking-[0.16em] text-chalk/85">
         {heading}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">

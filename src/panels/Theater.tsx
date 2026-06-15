@@ -30,26 +30,37 @@ import type { Group } from '../lib/types';
 //   • ZOOM = wheel changes `zoom`; we re-anchor scroll so the point under the
 //     cursor stays put. The box resizes and the svg rescales via its viewBox.
 
-const ZOOM_MIN = 0.4;
-const ZOOM_MAX = 3;
-const FIT_PAD = 32; // px breathing room around the fitted bracket
+const FIT_PAD = 40; // px breathing room kept around the bracket on every side
+const ZOOM_RANGE = 4; // max zoom-in = the fit (initial) scale × this
 
 function BracketStage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   // Intrinsic bracket aspect: prefer the live viewBox, fall back to nominal base.
   const [base, setBase] = useState({ w: BRACKET_BASE_W, h: BRACKET_BASE_H });
+  // Live scroll-container size — needed to center the bracket + cap the pan range.
+  const [cont, setCont] = useState({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(1);
+  // The fit-to-width scale the bracket opens at. It is ALSO the minimum zoom, so
+  // the user can never zoom out past the initial framing (defect 3 — zoom limit).
+  const [fitZoom, setFitZoom] = useState(0.4);
   const fitted = useRef(false);
   const drag = useRef<{ x: number; y: number; sl: number; st: number } | null>(null);
 
   const innerW = base.w * zoom;
   const innerH = base.h * zoom;
+  // The scrollable content is never smaller than the container; when the bracket
+  // (plus its breathing room) is larger it grows so the user can pan — but it never
+  // tightens past FIT_PAD around the tree, so panning stops at the last game with
+  // its margin intact (defect 3 — pan limit). The box is then centered inside it,
+  // giving equal breathing room on all sides (defect 2 — margins + centering).
+  const contentW = Math.max(innerW + FIT_PAD * 2, cont.w);
+  const contentH = Math.max(innerH + FIT_PAD * 2, cont.h);
 
-  // Read the real intrinsic size from the rendered <svg> viewBox, then fit once.
+  // Measure the container + the bracket's intrinsic size, then fit-to-width once.
   useEffect(() => {
-    const fit = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => {
       const svg = wrap.querySelector('svg');
       let bw = BRACKET_BASE_W;
       let bh = BRACKET_BASE_H;
@@ -61,62 +72,75 @@ function BracketStage() {
           bh = parts[3];
         }
       }
-      setBase({ w: bw, h: bh });
-      if (fitted.current) return;
       const cw = wrap.clientWidth;
       const ch = wrap.clientHeight;
       if (!cw || !ch) return;
-      // Fit to WIDTH so the bracket fills the container horizontally on open;
-      // the user can vertically scroll / drag-pan as needed.
-      const k = Math.min(
-        Math.max((cw - FIT_PAD * 2) / bw, ZOOM_MIN),
-        ZOOM_MAX,
-      );
-      setZoom(k);
-      fitted.current = true;
+      setBase({ w: bw, h: bh });
+      setCont({ w: cw, h: ch });
+      // Fit to WIDTH (minus breathing room) so columns stay readable; the tall
+      // tree then scrolls vertically. This fit is the minimum zoom.
+      const fit = Math.max(0.05, (cw - FIT_PAD * 2) / bw);
+      setFitZoom(fit);
+      if (!fitted.current) {
+        setZoom(fit);
+        fitted.current = true;
+      }
     };
-    const id = window.setTimeout(fit, 30);
-    window.addEventListener('resize', fit);
+    const id = window.setTimeout(measure, 30);
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
     return () => {
       window.clearTimeout(id);
-      window.removeEventListener('resize', fit);
+      ro.disconnect();
     };
   }, []);
 
-  // After a fit: center horizontally, start at the top vertically.
+  // On a fresh fit: center horizontally and anchor at the top, so the round labels
+  // show with breathing room above them rather than jammed against the modal edge.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    wrap.scrollLeft = Math.max(0, (innerW - wrap.clientWidth) / 2);
+    wrap.scrollLeft = Math.max(0, (contentW - wrap.clientWidth) / 2);
     wrap.scrollTop = 0;
-    // Only re-center on a fresh fit (base changes), not on every zoom nudge.
+    // Only re-anchor on a fresh fit (base / fit changes), not on every zoom nudge.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base.w, base.h]);
+  }, [base.w, base.h, fitZoom]);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    // Pointer position inside the *content* (scroll offset + cursor offset).
-    const px = wrap.scrollLeft + (e.clientX - rect.left);
-    const py = wrap.scrollTop + (e.clientY - rect.top);
-    setZoom((prev) => {
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev * Math.exp(-e.deltaY * 0.0015)));
-      const ratio = next / prev;
-      if (ratio === 1) return prev;
-      // Keep the point under the cursor stable after the box resizes.
-      const newScrollLeft = px * ratio - (e.clientX - rect.left);
-      const newScrollTop = py * ratio - (e.clientY - rect.top);
-      requestAnimationFrame(() => {
-        const w = wrapRef.current;
-        if (!w) return;
-        w.scrollLeft = newScrollLeft;
-        w.scrollTop = newScrollTop;
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      setZoom((prev) => {
+        const next = Math.min(
+          fitZoom * ZOOM_RANGE,
+          Math.max(fitZoom, prev * Math.exp(-e.deltaY * 0.0015)),
+        );
+        if (next === prev) return prev;
+        // The box is centered inside the padded content; account for that offset so
+        // the point under the cursor stays put across the zoom.
+        const prevBoxLeft = (Math.max(prev * base.w + FIT_PAD * 2, cont.w) - prev * base.w) / 2;
+        const prevBoxTop = (Math.max(prev * base.h + FIT_PAD * 2, cont.h) - prev * base.h) / 2;
+        const nextBoxLeft = (Math.max(next * base.w + FIT_PAD * 2, cont.w) - next * base.w) / 2;
+        const nextBoxTop = (Math.max(next * base.h + FIT_PAD * 2, cont.h) - next * base.h) / 2;
+        const bx = (wrap.scrollLeft + cx - prevBoxLeft) / prev; // cursor → bracket coords
+        const by = (wrap.scrollTop + cy - prevBoxTop) / prev;
+        const newScrollLeft = bx * next + nextBoxLeft - cx;
+        const newScrollTop = by * next + nextBoxTop - cy;
+        requestAnimationFrame(() => {
+          const w = wrapRef.current;
+          if (!w) return;
+          w.scrollLeft = newScrollLeft;
+          w.scrollTop = newScrollTop;
+        });
+        return next;
       });
-      return next;
-    });
-  }, []);
+    },
+    [fitZoom, base.w, base.h, cont.w, cont.h],
+  );
 
   const onPointerDown = (e: React.PointerEvent) => {
     const wrap = wrapRef.current;
@@ -145,8 +169,13 @@ function BracketStage() {
         onPointerLeave={endDrag}
         className="h-full w-full cursor-grab overflow-auto overscroll-contain active:cursor-grabbing [scrollbar-width:none] [touch-action:none] [&::-webkit-scrollbar]:hidden"
       >
-        <div style={{ width: innerW, height: innerH }}>
-          <Bracket />
+        {/* Padded, centered stage: the bracket box is centered within content that
+            is never smaller than the viewport, so there is equal breathing room on
+            every side and the pan range is capped to the tree + its margin. */}
+        <div className="flex items-center justify-center" style={{ width: contentW, height: contentH }}>
+          <div style={{ width: innerW, height: innerH, flexShrink: 0 }}>
+            <Bracket />
+          </div>
         </div>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-4 text-[10px] uppercase tracking-[0.16em] text-dust/70">

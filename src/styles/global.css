@@ -71,13 +71,17 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Layered page background (blueprint §3.2): void base + two radial floodlight
-     gradients (top-center cyan 4%, bottom-right ember 3%) + 3% noise data-URI to
-     kill banding. */
+  /* Layered page background (blueprint §3.2): a full-viewport "stage" radial that
+     mirrors the map's own floodlight so the WHOLE page reads as one lit stage —
+     the WebGL canvas only covers the middle grid row, and this base fills the rows
+     above/below it (esp. the band beneath the dock) so there is NO dead footer.
+     On top: faint cyan/ember accents + a 3% noise data-URI to kill banding. Layer
+     order is top→bottom, so the opaque stage base is LAST and the noise is FIRST. */
   background-image:
-    radial-gradient(ellipse 90vw 60vh at 50% -8%, rgb(0 229 255 / 0.04) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 90vw 60vh at 50% -8%, rgb(0 229 255 / 0.05) 0%, transparent 60%),
     radial-gradient(ellipse 70vw 60vh at 100% 100%, rgb(255 122 26 / 0.03) 0%, transparent 60%),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    radial-gradient(ellipse 92% 78% at 50% 38%, #0c1424 0%, #0a1120 38%, #070b15 66%, #050608 100%);
   background-attachment: fixed;
 }
 

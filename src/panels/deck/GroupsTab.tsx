@@ -97,10 +97,10 @@ export default function GroupsTab() {
         })}
       </div>
 
-      {/* Column header row (sub-labels) */}
+      {/* Column header row (sub-labels). "Team" sits flush-left; the flex-1 spacer
+          absorbs the slack so the right-hand P/W/D/L…R32 columns still line up with
+          the data rows below. */}
       <div className="flex h-5 items-center gap-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-dust">
-        <span className="w-[14px] shrink-0" aria-hidden="true" />
-        <span className="w-5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1">Team</span>
         <span className="w-[58px] shrink-0 text-right tracking-[0.08em]">P W D L</span>
         <span className="w-6 shrink-0 text-right">GD</span>
