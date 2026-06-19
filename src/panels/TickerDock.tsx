@@ -308,8 +308,10 @@ export default function TickerDock() {
       return;
     }
     const el = stripRef.current?.querySelector('[data-live]') as HTMLElement | null;
-    if (el && stripRef.current) {
-      stripRef.current.scrollLeft = Math.max(0, el.offsetLeft - 12);
+    if (el) {
+      // Align the live card to the track start; scroll-pl-4 on the container keeps the
+      // 16px breathing room so it isn't snapped flush against the edge.
+      el.scrollIntoView({ block: 'nearest', inline: 'start', behavior: 'auto' });
       didAutoScroll.current = true;
     }
   }, [strip]);
@@ -368,15 +370,15 @@ export default function TickerDock() {
         ) : (
           <div
             ref={stripRef}
-            className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-3 pb-2 [scroll-snap-type:x_proximity]"
+            className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden scroll-pl-4 pb-2 [scroll-snap-type:x_proximity]"
           >
             {strip.length === 0 ? (
               <div className="flex h-full items-center justify-center text-[11px] text-dust">No matches to display</div>
             ) : (
-              // w-max + mx-auto: the row centers as a unified group when the cards
-              // don't fill the dock, and falls back to left-aligned scrolling when
-              // they overflow — so neither side is ever flush while the other gaps.
-              <div className="mx-auto flex w-max gap-2">
+              // w-max + mx-auto centers the row when the cards don't fill the dock;
+              // px-4 lives on the INNER track (not the scroll container) so the first
+              // and last cards keep equal, scroll-safe breathing room from the edges.
+              <div className="mx-auto flex w-max gap-2 px-4">
                 {strip.map((m) => <TickerCard key={m.id} match={m} />)}
               </div>
             )}

@@ -33,17 +33,24 @@ export default function TopBar() {
   };
 
   return (
-    <header className="relative z-40 flex h-full w-full items-center gap-4 border-b border-hairline bg-gradient-to-b from-pitch/85 via-pitch/40 to-transparent pl-[60px] pr-5">
-      {/* Page title — clears the 56px floating icon rail via pl-[60px]. Stacked
-          title + tagline fills the taller banner. */}
-      <h1 className="flex min-w-0 flex-col justify-center gap-1.5">
-        <span className="font-display text-[30px] font-bold leading-none tracking-[0.02em] text-chalk">
-          World Cup <span className="text-neon">2026</span>
-        </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-dust">
-          Live Tracker
-        </span>
-      </h1>
+    <header className="relative z-40 flex h-full w-full items-center gap-4 border-b border-hairline bg-gradient-to-b from-void/95 via-void/85 to-void/40 backdrop-blur-sm pl-[80px] pr-5">
+      {/* Logo + title — clears the 56px floating icon rail via pl-[80px] (with a
+          comfortable gap so nothing is flush to the edge). */}
+      <div className="flex min-w-0 items-center gap-4">
+        <img
+          src="./favicon.svg"
+          alt="World Cup 2026"
+          className="h-10 w-10 shrink-0 drop-shadow-[0_0_8px_rgb(0_229_255/0.35)]"
+        />
+        <h1 className="flex min-w-0 flex-col justify-center gap-1.5">
+          <span className="font-display text-[30px] font-bold leading-none tracking-[0.02em] text-chalk">
+            World Cup <span className="text-neon">2026</span>
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-dust">
+            Live Tracker
+          </span>
+        </h1>
+      </div>
 
       <div className="flex-1" />
 
