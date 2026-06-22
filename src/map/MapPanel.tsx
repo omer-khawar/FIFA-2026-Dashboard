@@ -24,7 +24,7 @@ const LEGEND: Array<{ label: string; color: string }> = [
 
 function Legend() {
   return (
-    <div className="pointer-events-none absolute bottom-[176px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-hairline bg-glass px-3.5 py-1.5 backdrop-blur-xl">
+    <div className="pointer-events-none absolute bottom-[196px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-hairline bg-glass px-3.5 py-1.5 backdrop-blur-xl">
       {LEGEND.map(({ label, color }) => (
         <span
           key={label}
